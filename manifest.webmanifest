@@ -1,0 +1,18 @@
+{
+  "name": "كتالوج المندوب",
+  "short_name": "الكتالوج",
+  "description": "كتالوج المنتجات والأسعار يعمل بدون إنترنت",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#f2efeb",
+  "theme_color": "#c25e27",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
