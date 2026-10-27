@@ -183,7 +183,25 @@ def read_excels(excel_dir, pad, thousands, warn, layout):
     for f in files:
         wb = openpyxl.load_workbook(f, data_only=True)
         found = False
+        for ws in wb.worksheets:                      # ورقة «الشركات»: اسم الشركة + لونها في مكان واحد
+            if norm_header(ws.title) not in ("الشركات", "companies"):
+                continue
+            hdr = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+            kinds = [classify(v) for v in hdr]
+            if "company" in kinds and "color" in kinds:
+                ci, ki = kinds.index("company"), kinds.index("color")
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    nm = to_text(row[ci]) if ci < len(row) else ""
+                    cv = to_text(row[ki]) if ki < len(row) else ""
+                    if nm and cv:
+                        col = parse_color(cv)
+                        if col:
+                            colors[nm] = col
+                        else:
+                            warn(f"{f.name}/{ws.title}: لون غير مفهوم «{cv}» للشركة {nm}")
         for ws in wb.worksheets:
+            if norm_header(ws.title) in ("الشركات", "companies", "تعليمات"):
+                continue
             hdr_row, cols, shown = find_header(ws)
             if not hdr_row:
                 continue
