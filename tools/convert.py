@@ -34,9 +34,10 @@ ALIASES = {
     "barcode": ["باركود المادة", "الباركود", "باركود", "barcode"],
     "stock": ["عدد الباقي", "الباقي", "الكمية", "المخزون", "stock"],
     "pack": ["عدد التعبئة", "التعبئة", "pack"],
-    "price": ["سعر المفرد", "سعر القطعة", "المفرد", "price"],
+    "price": ["سعر المفرد", "سعر القطعة", "المفرد", "سعر", "السعر", "price"],
     "carton": ["سعر الكارتون", "سعر الكارتونة", "الكارتون", "carton"],
-    "company": ["الشركة", "القسم", "company"],
+    "company": ["الشركة", "شركة", "company", "brand"],
+    "category": ["القسم", "قسم", "التصنيف", "النوع", "category"],
     "color": ["لون الشركة", "اللون", "لون", "color"],
 }
 
@@ -131,19 +132,50 @@ def fill_color(cell):
     return None if hexv.upper() == "FFFFFF" else "#" + hexv.upper()
 
 
+def classify(v):
+    """يتعرف على نوع العمود من عنوانه (تطابق تام، ثم تطابق جزئي مرن)."""
+    h = norm_header(v).replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+    if not h:
+        return None
+    if h in HEADER_LOOKUP:
+        return HEADER_LOOKUP[h]
+    if "كارتون" in h or "carton" in h:
+        return "carton"
+    if "باركود" in h or "barcode" in h:
+        return "barcode"
+    if "تعبئ" in h or "pack" in h:
+        return "pack"
+    if "باقي" in h or "مخزون" in h or "stock" in h:
+        return "stock"
+    if "شركه" in h or "شركة" in h:
+        return "company"
+    if "قسم" in h or "تصنيف" in h:
+        return "category"
+    if "لون" in h:
+        return "color"
+    if "سعر" in h:
+        return "price"
+    if h.startswith("كود") or h.endswith("كود") or h == "code":
+        return "code"
+    if "اسم" in h or "name" in h:
+        return "name"
+    return None
+
+
 def find_header(ws):
     for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=40, values_only=True), start=1):
-        cols = {}
+        cols, shown = {}, {}
         for c_idx, v in enumerate(row):
-            k = HEADER_LOOKUP.get(norm_header(v))
+            k = classify(v)
             if k and k not in cols:
                 cols[k] = c_idx
+                shown[k] = str(v).strip()
         if "name" in cols and "code" in cols:
-            return r_idx, cols
-    return None, None
+            return r_idx, cols, shown
+    return None, None, None
 
 
-def read_excels(excel_dir, pad, thousands, warn):
+def read_excels(excel_dir, pad, thousands, warn, layout):
     items, seen, colors = [], {}, {}
     files = sorted(p for p in excel_dir.glob("*.xlsx") if not p.name.startswith("~$"))
     if not files:
@@ -152,10 +184,11 @@ def read_excels(excel_dir, pad, thousands, warn):
         wb = openpyxl.load_workbook(f, data_only=True)
         found = False
         for ws in wb.worksheets:
-            hdr_row, cols = find_header(ws)
+            hdr_row, cols, shown = find_header(ws)
             if not hdr_row:
                 continue
             found = True
+            layout.append(f"{f.name} / {ws.title}: " + " | ".join(f"{shown[k]}={k}" for k in sorted(cols, key=cols.get)))
             scale = 1000 if thousands else 1
             empty_run = 0
             for r_idx, cells in enumerate(ws.iter_rows(min_row=hdr_row + 1), start=hdr_row + 1):
@@ -169,7 +202,10 @@ def read_excels(excel_dir, pad, thousands, warn):
                     continue
                 empty_run = 0
                 where = f"{f.name}/{ws.title} سطر {r_idx}"
-                company = to_text(get("company")) or f.stem
+                category = to_text(get("category"))
+                company = to_text(get("company")) or category or f.stem
+                if "company" not in cols:
+                    category = ""
                 if company not in colors:
                     col = None
                     if "color" in cols and to_text(get("color")):
@@ -187,7 +223,10 @@ def read_excels(excel_dir, pad, thousands, warn):
                     "pack": to_num(get("pack"), warn, where),
                     "price": to_num(get("price"), warn, where, scale),
                     "carton": to_num(get("carton"), warn, where, scale),
+                    "category": category,
                 }
+                if "carton" not in cols and it["price"] and it["pack"]:      # لا يوجد عمود كارتون: السعر × التعبئة
+                    it["carton"] = it["price"] * it["pack"]
                 key = (company, code.lower())
                 if key in seen:
                     warn(f"{where}: الكود {code} مكرر في {company} — اعتُمد السطر الأخير")
@@ -259,7 +298,8 @@ def main():
 
     warnings = []
     warn = warnings.append
-    items, colors = read_excels(a.excel, a.pad, a.thousands, warn)
+    layout = []
+    items, colors = read_excels(a.excel, a.pad, a.thousands, warn, layout)
     companies = list(dict.fromkeys(i["company"] for i in items))
     auto = []
     for c in companies:                      # شركة بلا لون: يُعطى لوناً تلقائياً غير مكرر
@@ -313,10 +353,13 @@ def main():
 
     rep = a.out / "reports"
     rep.mkdir(exist_ok=True)
+    (rep / "columns.txt").write_text("\n".join(layout) + "\n", encoding="utf-8")
     (rep / "missing_images.txt").write_text("الشركة\tالكود\tالاسم\n" + "\n".join(missing) + "\n", encoding="utf-8")
 
     print(f"المواد: {len(items)} | الشركات: {len(companies)} | صور محوّلة الآن: {converted} | بلا صورة: {len(missing)}")
-    for c in companies:
+    for l in layout:
+        print("الأعمدة:", l)
+    for c in companies[:40]:
         print(f"  {c}: {colors[c]}" + (" (تلقائي)" if c in auto else ""))
     for w in warnings[:30]:
         print("تنبيه:", w)
