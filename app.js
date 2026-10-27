@@ -13,7 +13,7 @@
   };
 
   const state = {
-    items: [], companies: [], list: [],
+    items: [], companies: [], colors: {}, list: [],
     q: '', company: '', inStock: false,
     shown: 0, version: '', updated: '', cur: -1,
     customer: store.get('customer') === '1'
@@ -37,6 +37,11 @@
   const ltr = s => '‪' + s + '‬';               // يمنع قلب ترتيب الأرقام داخل النص العربي
   const imgPath = (it, kind) => (it.img ? `images/${kind}/${encodeURIComponent(it.img)}.webp` : '');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const coColor = n => state.colors[n] || ORANGE;                      // لون الشركة
+  const textOn = hex => {                                              // أبيض أو داكن حسب سطوع اللون
+    const h = String(hex).replace('#', ''); const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? '#1f1d1b' : '#fff';
+  };
 
   let toastTimer;
   function toast(msg) {
@@ -69,6 +74,7 @@
   function applyData(d) {
     state.version = d.version; state.updated = d.updated;
     state.companies = d.companies || [];
+    state.colors = d.colors || {};
     state.items = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company].join(' ')) }));
     if (state.company && !state.companies.includes(state.company)) state.company = '';
     buildChips(); apply(false); updateDataInfo();
@@ -93,8 +99,10 @@
   function buildChips() {
     const counts = {};
     state.items.forEach(i => { counts[i.company] = (counts[i.company] || 0) + 1; });
-    const chip = (name, label, n) =>
-      `<button class="chip${state.company === name ? ' on' : ''}" data-co="${esc(name)}" type="button">${esc(label)}<small>${n}</small></button>`;
+    const chip = (name, label, n) => {
+      const c = name ? coColor(name) : '#4a443e';
+      return `<button class="chip${state.company === name ? ' on' : ''}" style="--c:${c};--t:${textOn(c)}" data-co="${esc(name)}" type="button"><i class="dot"></i>${esc(label)}<small>${n}</small></button>`;
+    };
     $('#chips').innerHTML = chip('', 'الكل', state.items.length) + state.companies.map(c => chip(c, c, counts[c] || 0)).join('');
   }
 
@@ -123,7 +131,10 @@
   function cardHtml(it, i) {
     const t = imgPath(it, 'thumbs');
     const im = t ? `<img src="${t}" loading="lazy" decoding="async" alt="">` : `<div class="ph">${esc(it.code)}</div>`;
-    return `<button class="card" type="button" data-i="${i}"><div class="cimg">${im}${it.stock <= 0 ? '<span class="badge">غير متوفر</span>' : ''}</div>` +
+    let stock = '';
+    if (it.stock <= 0) stock = '<span class="stock out">غير متوفر</span>';
+    else if (!state.customer) stock = `<span class="stock${it.stock <= 10 ? ' low' : ''}">الباقي <b>${num(it.stock)}</b></span>`;
+    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}${stock}</div>` +
       `<div class="cname">${esc(it.name)}</div><div class="cfoot"><span class="ccode">${esc(it.code)}</span><span class="cprice">${fmt(it.price)}</span></div></button>`;
   }
 
@@ -165,18 +176,20 @@
       f.onload = () => { if (token === detailToken) { const el = media.querySelector('img'); if (el) el.src = f.src; } };
       f.src = imgPath(it, 'full');
     }
+    const pc = $('#detail .panel'), col = coColor(it.company);
+    pc.style.setProperty('--co', col); pc.style.setProperty('--t', textOn(col));
     $('#dName').textContent = it.name;
     $('#dPrices').innerHTML =
       `<div class="p-main"><small>سعر المفرد</small><b>${fmt(it.price)}</b></div>` +
       (!cust && it.carton > 0 ? `<div class="p-sub"><small>سعر الكارتون</small><b>${fmt(it.carton)}</b></div>` : '');
     const status = it.stock > 0 ? (cust ? 'متوفر' : `متوفر (${num(it.stock)})`) : 'غير متوفر';
     const rows = [
-      ['الكود', it.code, true], ['الشركة', it.company],
+      ['الكود', it.code, true], ['الشركة', `<span class="cdot" style="background:${coColor(it.company)}"></span>${esc(it.company)}`, false, true],
       !cust && it.barcode ? ['الباركود', it.barcode, true] : null,
       !cust && it.pack ? ['عدد التعبئة', num(it.pack), true] : null,
       ['الحالة', status]
     ].filter(Boolean);
-    $('#dRows').innerHTML = rows.map(r => `<dt>${r[0]}</dt><dd class="${r[2] ? 'ltr' : ''}">${esc(r[1])}</dd>`).join('');
+    $('#dRows').innerHTML = rows.map(r => `<dt>${r[0]}</dt><dd class="${r[2] ? 'ltr' : ''}">${r[3] ? r[1] : esc(r[1])}</dd>`).join('');
     $('#dPrev').hidden = i <= 0;
     $('#dNext').hidden = i >= state.list.length - 1;
     $('#dPos').textContent = `${i + 1} / ${state.list.length}`;
@@ -334,6 +347,11 @@
     const v = $('#pdfScope').value;
     return v === 'all' ? 'كل المنتجات' : v === 'current' ? (state.company || 'المنتجات المعروضة') : v.slice(3);
   }
+  function pdfScopeColor() {
+    const v = $('#pdfScope').value;
+    if (v.startsWith('co:')) return coColor(v.slice(3));
+    return v === 'current' && state.company ? coColor(state.company) : ORANGE;
+  }
   function updatePdfInfo() {
     const n = pdfScopeItems().length, per = $('#pdfLayout').value;
     $('#pdfInfo').textContent = `${num(n)} مادة — حوالي ${num(Math.ceil(n / per))} صفحة`;
@@ -403,8 +421,8 @@
         (per >= 6 ? [imgPath(it, 'thumbs')] : [imgPath(it, 'full'), imgPath(it, 'thumbs')]).filter(Boolean))));
 
       g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
-      g.fillStyle = ORANGE; g.fillRect(0, 0, W, 104);
-      g.fillStyle = '#fff'; g.textBaseline = 'middle';
+      g.fillStyle = opt.color; g.fillRect(0, 0, W, 104);
+      g.fillStyle = textOn(opt.color); g.textBaseline = 'middle';
       g.textAlign = 'right'; g.direction = 'rtl'; g.font = `bold 42px ${FONT}`; g.fillText(opt.title, W - 40, 54);
       g.textAlign = 'left'; g.direction = 'ltr'; g.font = `24px ${FONT}`; g.fillText(today, 40, 54);
       g.direction = 'rtl';
@@ -447,7 +465,7 @@
     const prog = $('#pdfProg'); prog.hidden = false; prog.value = 0;
     try {
       const blob = await buildPdf(items, {
-        layout: $('#pdfLayout').value, carton: $('#pdfCarton').checked && !state.customer, title: pdfScopeTitle()
+        layout: $('#pdfLayout').value, color: pdfScopeColor(), carton: $('#pdfCarton').checked && !state.customer, title: pdfScopeTitle()
       }, (d, t) => { prog.max = t; prog.value = d; $('#pdfText').textContent = `جارٍ الإنشاء… صفحة ${d} من ${t}`; });
       if (!blob) { $('#pdfText').textContent = 'تم الإيقاف'; }
       else {
