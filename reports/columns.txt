@@ -1,0 +1,1 @@
+‎⁨اكسل الموقع⁩.xlsx / ورقة1: اسم المادة=name | كود=code | باركود=barcode | عدد التعبئة=pack | سعر=price | عدد الباقي=stock | القسم=category
