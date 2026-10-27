@@ -16,6 +16,7 @@
 التشغيل:  python tools/convert.py [--prune] [--force]
 """
 import argparse
+import colorsys
 import datetime
 import hashlib
 import json
@@ -36,7 +37,29 @@ ALIASES = {
     "price": ["سعر المفرد", "سعر القطعة", "المفرد", "price"],
     "carton": ["سعر الكارتون", "سعر الكارتونة", "الكارتون", "carton"],
     "company": ["الشركة", "القسم", "company"],
+    "color": ["لون الشركة", "اللون", "لون", "color"],
 }
+
+# ألوان بالأسماء (يمكن كتابة اسم اللون أو كود مثل #1976D2 في عمود "لون الشركة")
+NAMED_COLORS = {
+    "احمر": "#D32F2F", "حمراء": "#D32F2F", "red": "#D32F2F",
+    "برتقالي": "#F57C00", "برتقاليه": "#F57C00", "orange": "#F57C00",
+    "اصفر": "#F9A825", "صفراء": "#F9A825", "yellow": "#F9A825",
+    "اخضر": "#388E3C", "خضراء": "#388E3C", "green": "#388E3C",
+    "ازرق": "#1976D2", "زرقاء": "#1976D2", "blue": "#1976D2",
+    "سماوي": "#00ACC1", "تركوازي": "#00897B", "cyan": "#00ACC1",
+    "بنفسجي": "#7B1FA2", "ارجواني": "#7B1FA2", "purple": "#7B1FA2",
+    "وردي": "#E91E63", "زهري": "#E91E63", "pink": "#E91E63",
+    "بني": "#6D4C41", "brown": "#6D4C41",
+    "رمادي": "#616161", "gray": "#616161", "grey": "#616161",
+    "اسود": "#212121", "black": "#212121",
+    "ذهبي": "#B8860B", "gold": "#B8860B",
+    "كحلي": "#1A237E", "navy": "#1A237E",
+    "زيتي": "#689F38", "olive": "#689F38",
+}
+AUTO_COLORS = ["#F57C00", "#1976D2", "#388E3C", "#D32F2F", "#7B1FA2", "#00ACC1",
+               "#F9A825", "#6D4C41", "#E91E63", "#455A64", "#689F38", "#5D4037"]
+THEME = ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"]
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp"}
 AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 
@@ -77,6 +100,37 @@ def to_num(v, warn, where, scale=1):
     return int(s) * scale if s not in ("", "-") else 0
 
 
+def parse_color(v):
+    s = norm_header(v).replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+    m = re.fullmatch(r"#?([0-9a-f]{6})", s)
+    if m:
+        return "#" + m.group(1).upper()
+    return NAMED_COLORS.get(s)
+
+
+def apply_tint(hexv, tint):
+    r, g, b = (int(hexv[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    h, l, sat = colorsys.rgb_to_hls(r, g, b)
+    l = l * (1 + tint) if tint < 0 else l * (1 - tint) + tint
+    r, g, b = colorsys.hls_to_rgb(h, max(0, min(1, l)), sat)
+    return "%02X%02X%02X" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+def fill_color(cell):
+    """لون تعبئة الخلية في الإكسل (إن وُجد ولم يكن أبيض)."""
+    f = cell.fill
+    if not f or f.fill_type != "solid":
+        return None
+    c = f.fgColor
+    if c.type == "rgb" and isinstance(c.rgb, str) and len(c.rgb) == 8 and c.rgb != "00000000":
+        hexv = c.rgb[2:]
+    elif c.type == "theme" and c.theme is not None and c.theme < len(THEME):
+        hexv = apply_tint(THEME[c.theme], c.tint or 0)
+    else:
+        return None
+    return None if hexv.upper() == "FFFFFF" else "#" + hexv.upper()
+
+
 def find_header(ws):
     for r_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=40, values_only=True), start=1):
         cols = {}
@@ -90,12 +144,12 @@ def find_header(ws):
 
 
 def read_excels(excel_dir, pad, thousands, warn):
-    items, seen = [], {}
+    items, seen, colors = [], {}, {}
     files = sorted(p for p in excel_dir.glob("*.xlsx") if not p.name.startswith("~$"))
     if not files:
         sys.exit(f"لا توجد ملفات xlsx داخل {excel_dir}")
     for f in files:
-        wb = openpyxl.load_workbook(f, data_only=True, read_only=True)
+        wb = openpyxl.load_workbook(f, data_only=True)
         found = False
         for ws in wb.worksheets:
             hdr_row, cols = find_header(ws)
@@ -103,13 +157,29 @@ def read_excels(excel_dir, pad, thousands, warn):
                 continue
             found = True
             scale = 1000 if thousands else 1
-            for r_idx, row in enumerate(ws.iter_rows(min_row=hdr_row + 1, values_only=True), start=hdr_row + 1):
+            empty_run = 0
+            for r_idx, cells in enumerate(ws.iter_rows(min_row=hdr_row + 1), start=hdr_row + 1):
+                row = [c.value for c in cells]
                 get = lambda k: row[cols[k]] if k in cols and cols[k] < len(row) else None
                 name, code = to_text(get("name")), to_code(get("code"), pad)
                 if not name or not code:
+                    empty_run += 1
+                    if empty_run > 100:      # ملفات فيها تنسيق لملايين الصفوف الفارغة
+                        break
                     continue
+                empty_run = 0
                 where = f"{f.name}/{ws.title} سطر {r_idx}"
                 company = to_text(get("company")) or f.stem
+                if company not in colors:
+                    col = None
+                    if "color" in cols and to_text(get("color")):
+                        col = parse_color(to_text(get("color")))
+                        if not col:
+                            warn(f"{where}: لون غير مفهوم «{to_text(get('color'))}» — استخدم اسم لون أو كود مثل #1976D2")
+                    if not col and "company" in cols and cols["company"] < len(cells):
+                        col = fill_color(cells[cols["company"]])
+                    if col:
+                        colors[company] = col
                 it = {
                     "code": code, "name": re.sub(r"\s+", " ", name), "company": company,
                     "barcode": re.sub(r"\s+", "", to_text(get("barcode"))),
@@ -127,7 +197,7 @@ def read_excels(excel_dir, pad, thousands, warn):
                     items.append(it)
         if not found:
             warn(f"{f.name}: لم أجد صف العناوين (اسم المادة / كود المادة) — تم تجاهل الملف")
-    return items
+    return items, colors
 
 
 def safe(s):
@@ -189,8 +259,15 @@ def main():
 
     warnings = []
     warn = warnings.append
-    items = read_excels(a.excel, a.pad, a.thousands, warn)
+    items, colors = read_excels(a.excel, a.pad, a.thousands, warn)
     companies = list(dict.fromkeys(i["company"] for i in items))
+    auto = []
+    for c in companies:                      # شركة بلا لون: يُعطى لوناً تلقائياً غير مكرر
+        if c not in colors:
+            free = [x for x in AUTO_COLORS if x not in colors.values()] or AUTO_COLORS
+            colors[c] = free[len(auto) % len(free)] if free is AUTO_COLORS else free[0]
+            auto.append(c)
+    colors = {c: colors[c] for c in companies}
 
     code_cos = {}
     for i in items:
@@ -219,7 +296,7 @@ def main():
                 if p.stem not in used:
                     p.unlink()
 
-    payload = {"companies": companies, "items": items}
+    payload = {"companies": companies, "colors": colors, "items": items}
     digest = hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
     out = a.out / "data" / "products.json"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +316,8 @@ def main():
     (rep / "missing_images.txt").write_text("الشركة\tالكود\tالاسم\n" + "\n".join(missing) + "\n", encoding="utf-8")
 
     print(f"المواد: {len(items)} | الشركات: {len(companies)} | صور محوّلة الآن: {converted} | بلا صورة: {len(missing)}")
+    for c in companies:
+        print(f"  {c}: {colors[c]}" + (" (تلقائي)" if c in auto else ""))
     for w in warnings[:30]:
         print("تنبيه:", w)
     if len(warnings) > 30:
