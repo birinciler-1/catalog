@@ -131,11 +131,12 @@
   function cardHtml(it, i) {
     const t = imgPath(it, 'thumbs');
     const im = t ? `<img src="${t}" loading="lazy" decoding="async" alt="">` : `<div class="ph">${esc(it.code)}</div>`;
-    let stock = '';
-    if (it.stock <= 0) stock = '<span class="stock out">غير متوفر</span>';
-    else if (!state.customer) stock = `<span class="stock${it.stock <= 10 ? ' low' : ''}">الباقي <b>${num(it.stock)}</b></span>`;
-    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}${stock}</div>` +
-      `<div class="cname">${esc(it.name)}</div><div class="cfoot"><span class="ccode">${esc(it.code)}</span><span class="cprice">${fmt(it.price)}</span></div></button>`;
+    let info = '';
+    if (it.stock <= 0) info = '<div class="cinfo"><span class="half out">غير متوفر</span></div>';
+    else if (!state.customer) info = `<div class="cinfo"><span class="half st${it.stock <= 10 ? ' low' : ''}"><small>الباقي</small><b>${num(it.stock)}</b></span>` +
+      (it.pack > 0 ? `<span class="half pk"><small>التعبئة</small><b>${num(it.pack)}</b></span>` : '') + '</div>';
+    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}</div>` +
+      `<div class="cname">${esc(it.name)}</div>${info}<div class="cfoot"><span class="ccode">${esc(it.code)}</span><span class="cprice">${fmt(it.price)}</span></div></button>`;
   }
 
   function renderMore() {

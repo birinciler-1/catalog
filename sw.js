@@ -3,7 +3,7 @@
    - data/products.json (الأسعار): الشبكة أولاً، وإن لم يوجد إنترنت تُعرض آخر نسخة محفوظة
    - الصور: تُحفظ عند أول عرض وتبقى (تتبقى بين التحديثات)
    غيّر VERSION عند تعديل ملفات التطبيق نفسها لإجبار التحديث. */
-const VERSION = '2026-10-27.2';
+const VERSION = '2026-10-27.3';
 const SHELL_CACHE = 'shell-' + VERSION;
 const IMG_CACHE = 'images-v1';
 const DATA_CACHE = 'data-v1';
