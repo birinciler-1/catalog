@@ -14,7 +14,7 @@
 
   const state = {
     items: [], companies: [], colors: {}, list: [],
-    q: '', company: '', inStock: false,
+    q: '', company: '', category: '', view: 'all', sort: store.get('sort') || 'file', inStock: false,
     shown: 0, version: '', updated: '', cur: -1,
     customer: store.get('customer') === '1'
   };
@@ -27,6 +27,8 @@
     share: '<svg viewBox="0 0 24 24"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 12v8h14v-8"/></svg>',
     close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     chevL: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+    grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
+    building: '<svg viewBox="0 0 24 24"><path d="M5 21V5l9-2v18"/><path d="M14 9h5v12"/><path d="M9 8h1M9 12h1M9 16h1M17 13h.01M17 17h.01"/></svg>',
     chevR: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>'
   };
   document.querySelectorAll('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', ICONS[el.dataset.icon] || ''));
@@ -75,9 +77,10 @@
     state.version = d.version; state.updated = d.updated;
     state.companies = d.companies || [];
     state.colors = d.colors || {};
-    state.items = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company].join(' ')) }));
+    state.items = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')) }));
     if (state.company && !state.companies.includes(state.company)) state.company = '';
-    buildChips(); apply(false); updateDataInfo();
+    if (state.view === 'companies') buildCompanies(); else apply(false);
+    updateDataInfo();
   }
 
   async function refresh(manual) {
@@ -96,14 +99,43 @@
   }
 
   /* ───────────── البحث والفلترة ───────────── */
-  function buildChips() {
-    const counts = {};
-    state.items.forEach(i => { counts[i.company] = (counts[i.company] || 0) + 1; });
-    const chip = (name, label, n) => {
-      const c = name ? coColor(name) : '#4a443e';
-      return `<button class="chip${state.company === name ? ' on' : ''}" style="--c:${c};--t:${textOn(c)}" data-co="${esc(name)}" type="button"><i class="dot"></i>${esc(label)}<small>${n}</small></button>`;
-    };
-    $('#chips').innerHTML = chip('', 'الكل', state.items.length) + state.companies.map(c => chip(c, c, counts[c] || 0)).join('');
+  /* التبويب الأول: كل المواد | التبويب الثاني: الشركات */
+  function setView(v) {
+    state.view = v;
+    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    const co = v === 'companies';
+    $('#coGrid').hidden = !co; $('#grid').hidden = co; $('#meta').hidden = co; $('#sentinel').hidden = co;
+    if (co) { $('#cobar').hidden = true; $('#chips').hidden = true; $('#empty').hidden = true; buildCompanies(); }
+    else apply();
+    window.scrollTo(0, 0);
+  }
+
+  function buildCompanies() {
+    const n = {}, inS = {};
+    state.items.forEach(i => { n[i.company] = (n[i.company] || 0) + 1; if (i.stock > 0) inS[i.company] = (inS[i.company] || 0) + 1; });
+    $('#coGrid').innerHTML = state.companies.map(c => {
+      const col = coColor(c);
+      return `<button class="cotile" type="button" data-co="${esc(c)}" style="--c:${col};--t:${textOn(col)}"><b>${esc(c)}</b>` +
+        `<span>${num(n[c] || 0)} مادة</span>${state.customer ? '' : `<small>متوفر: ${num(inS[c] || 0)}</small>`}</button>`;
+    }).join('') || '<div class="empty">لا توجد شركات</div>';
+  }
+
+  function buildCats() {                     // أقسام الشركة المختارة (إن وُجد عمود القسم)
+    const bar = $('#cobar'), chips = $('#chips');
+    bar.hidden = !state.company;
+    if (state.company) {
+      const col = coColor(state.company);
+      bar.style.setProperty('--c', col); bar.style.setProperty('--t', textOn(col));
+      $('#coName').textContent = state.company;
+    }
+    const cats = {};
+    if (state.company) state.items.forEach(i => { if (i.company === state.company && i.category) cats[i.category] = (cats[i.category] || 0) + 1; });
+    const names = Object.keys(cats);
+    chips.hidden = names.length < 2;
+    if (chips.hidden) { state.category = ''; return; }
+    const col = coColor(state.company), tot = names.reduce((a, k) => a + cats[k], 0);
+    const chip = (name, label, c) => `<button class="chip${state.category === name ? ' on' : ''}" style="--c:${col};--t:${textOn(col)}" data-cat="${esc(name)}" type="button">${esc(label)}<small>${c}</small></button>`;
+    chips.innerHTML = chip('', 'الكل', tot) + names.map(k => chip(k, k, cats[k])).join('');
   }
 
   function apply(resetScroll = true) {
@@ -111,8 +143,21 @@
     const toks = qn ? qn.split(' ') : [];
     let r = state.items.filter(it =>
       (!state.company || it.company === state.company) &&
+      (!state.category || it.category === state.category) &&
       (!state.inStock || it.stock > 0) &&
       toks.every(t => it._s.includes(t)));
+    if (state.sort !== 'file') {
+      const col = new Intl.Collator('ar'), cx = {}; state.companies.forEach((c, k) => { cx[c] = k; });
+      const by = {
+        code: (x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }),
+        priceAsc: (x, y) => x.price - y.price,
+        priceDesc: (x, y) => y.price - x.price,
+        company: (x, y) => cx[x.company] - cx[y.company],
+        name: (x, y) => col.compare(x.name, y.name)
+      }[state.sort];
+      if (by) r = r.map((it, k) => [k, it]).sort((x, y) => by(x[1], y[1]) || x[0] - y[0]).map(x => x[1]);
+    }
+    buildCats();
     if (qn) {                                   // تطابق الكود أولاً
       const rank = it => { const c = norm(it.code); return c === qn ? 0 : c.startsWith(qn) ? 1 : 2; };
       r = r.map((it, i) => [rank(it), i, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
@@ -535,14 +580,28 @@
   let searchTimer;
   $('#q').addEventListener('input', e => {
     state.q = e.target.value; $('#clear').hidden = !state.q;
+    if (state.q && state.view === 'companies') { state.company = ''; state.category = ''; setView('all'); return; }
     clearTimeout(searchTimer); searchTimer = setTimeout(() => apply(), 120);
   });
   $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
   $('#clear').onclick = () => { $('#q').value = ''; state.q = ''; $('#clear').hidden = true; apply(); $('#q').focus(); };
   $('#chips').addEventListener('click', e => {
     const b = e.target.closest('.chip'); if (!b) return;
-    state.company = b.dataset.co; buildChips(); apply();
+    state.category = b.dataset.cat; apply();
   });
+  $('#coGrid').addEventListener('click', e => {
+    const b = e.target.closest('.cotile'); if (!b) return;
+    state.company = b.dataset.co; state.category = '';
+    $('#coGrid').hidden = true; setView('all');
+  });
+  $('#coBack').onclick = () => { state.company = ''; state.category = ''; setView('companies'); };
+  $('#tabbar').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.view === 'all') { state.company = ''; state.category = ''; }
+    setView(b.dataset.view);
+  });
+  $('#sort').value = state.sort;
+  $('#sort').addEventListener('change', e => { state.sort = e.target.value; store.set('sort', state.sort); apply(); });
   $('#inStock').addEventListener('change', e => { state.inStock = e.target.checked; apply(); });
   $('#btnPdf').onclick = openPdfSheet;
   $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; updateDataInfo(); updateStorageInfo(); openSheet('settings'); };

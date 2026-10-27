@@ -26,14 +26,27 @@
     <button class="icon-btn" id="btnPdf" type="button" aria-label="تصدير PDF" data-icon="pdf"></button>
     <button class="icon-btn" id="btnSettings" type="button" aria-label="الإعدادات" data-icon="sliders"></button>
   </div>
-  <div class="chips" id="chips"></div>
-  <div class="meta">
+  <div class="cobar" id="cobar" hidden>
+    <button type="button" id="coBack"><span data-icon="chevR"></span><span>الشركات</span></button>
+    <b id="coName"></b>
+  </div>
+  <div class="chips" id="chips" hidden></div>
+  <div class="meta" id="meta">
     <span id="count"></span>
+    <select id="sort" aria-label="الترتيب">
+      <option value="file">الترتيب الأصلي</option>
+      <option value="code">حسب الكود</option>
+      <option value="priceAsc">الأرخص أولاً</option>
+      <option value="priceDesc">الأغلى أولاً</option>
+      <option value="company">حسب الشركة</option>
+      <option value="name">حسب الاسم</option>
+    </select>
     <label class="mini-switch"><input type="checkbox" id="inStock"><span>المتوفر فقط</span></label>
   </div>
 </header>
 
 <main>
+  <div id="coGrid" class="cogrid" hidden></div>
   <div id="grid" class="grid"></div>
   <div id="sentinel"></div>
   <div id="empty" class="empty" hidden></div>
@@ -128,6 +141,11 @@
     </section>
   </div>
 </div>
+
+<nav class="tabbar" id="tabbar">
+  <button type="button" data-view="all" class="on"><span data-icon="grid"></span><span>كل المواد</span></button>
+  <button type="button" data-view="companies"><span data-icon="building"></span><span>الشركات</span></button>
+</nav>
 
 <div id="toast" role="status" aria-live="polite"></div>
 
