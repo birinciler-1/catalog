@@ -37,7 +37,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .mini-switch input{accent-color:var(--o);width:20px;height:20px;margin:0}
 
 /* ── الشبكة ── */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;padding:14px 14px calc(40px + var(--safe-b))}
+.grid{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:12px;padding:14px 14px calc(40px + var(--safe-b));touch-action:pan-y}
+html,body{touch-action:pan-x pan-y}
 .card{display:flex;flex-direction:column;gap:8px;background:#fff;border-radius:18px;padding:15px 10px 10px;text-align:start;
   box-shadow:inset 0 6px 0 var(--co,transparent),0 1px 2px rgba(0,0,0,.05);transition:transform .08s}
 .card:active{transform:scale(.98)}
@@ -143,3 +144,33 @@ progress{width:100%;height:10px;accent-color:var(--o);margin-top:10px}
 .tabbar button.on{color:var(--o);font-weight:700}
 .grid{padding-bottom:calc(100px + var(--safe-b))}
 body.lock .tabbar{display:none}
+
+/* ── تقريب بإصبعين: كلما زاد عدد الأعمدة تتبسّط البطاقة ── */
+.zoom{display:flex;gap:6px}
+.zoom button{width:34px;height:34px;border-radius:10px;background:#fff;border:1.5px solid var(--line);font-size:20px;line-height:1;font-weight:700}
+.zoom button:active{background:#eee9e2}
+.grid.d1{gap:9px;padding-inline:10px}
+.grid.d1 .card{padding:12px 6px 6px;border-radius:14px;gap:5px}
+.grid.d1 .cinfo{display:none}
+.grid.d1 .cname{font-size:12.5px;line-height:1.35;height:2.7em}
+.grid.d1 .ccode{font-size:14px;border-width:2px;border-radius:8px;padding:1px 4px}
+.grid.d1 .cprice{font-size:12px;padding:3px 2px;border-radius:8px;white-space:nowrap;overflow:hidden}
+.grid.d1 .ph{font-size:15px}
+.grid.d2{gap:7px;padding-inline:8px}
+.grid.d2 .card{padding:10px 4px 4px;border-radius:12px;gap:4px;box-shadow:inset 0 5px 0 var(--co,transparent)}
+.grid.d2 .cname,.grid.d2 .cinfo,.grid.d2 .cprice{display:none}
+.grid.d2 .cimg{border-radius:8px}
+.grid.d2 .ccode{font-size:12px;border-width:1.5px;border-radius:6px;padding:0 2px}
+.grid.d2 .ph{font-size:12px}
+.grid.d3{gap:5px;padding-inline:6px}
+.grid.d3 .card{padding:6px 2px 2px;border-radius:9px;gap:2px;box-shadow:inset 0 4px 0 var(--co,transparent)}
+.grid.d3 .cname,.grid.d3 .cinfo,.grid.d3 .cprice{display:none}
+.grid.d3 .cimg{border-radius:6px}
+.grid.d3 .ccode{font-size:9.5px;border:0;padding:0;background:none;font-weight:700}
+.grid.d3 .ph{font-size:10px}
+
+.meta{gap:8px}
+.meta #count,.mini-switch{white-space:nowrap}
+.meta select{margin-inline:0;min-width:0;max-width:none;font-size:13.5px}
+.mini-switch{gap:6px;font-size:13.5px}
+main{min-height:70vh}

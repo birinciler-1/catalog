@@ -39,6 +39,7 @@
   const ltr = s => '‪' + s + '‬';               // يمنع قلب ترتيب الأرقام داخل النص العربي
   const imgPath = (it, kind) => (it.img ? `images/${kind}/${encodeURIComponent(it.img)}.webp` : '');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let lastPinch = 0;
   const coColor = n => state.colors[n] || ORANGE;                      // لون الشركة
   const textOn = hex => {                                              // أبيض أو داكن حسب سطوع اللون
     const h = String(hex).replace('#', ''); const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
@@ -46,10 +47,10 @@
   };
 
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms = 2600) {
     const t = $('#toast');
     t.textContent = msg; t.classList.add('show');
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
   }
 
   /* توحيد النص العربي للبحث: يتجاهل التشكيل والهمزات والتاء المربوطة والأرقام الهندية… */
@@ -205,6 +206,7 @@
     t.replaceWith(ph);
   }, true);
   $('#grid').addEventListener('click', e => {
+    if (Date.now() - lastPinch < 450) return;          // لا تفتح بطاقة بالخطأ بعد التقريب بإصبعين
     const c = e.target.closest('.card'); if (c) openDetail(+c.dataset.i);
   });
 
@@ -633,5 +635,52 @@
   if (!had) showEmpty('جارٍ تحميل البيانات…');
   refresh(false).then(() => { if (!state.items.length) return; $('#empty').hidden = state.list.length > 0; });
 
-  window.__catalog = { state, apply, norm };     // للفحص والاختبار فقط
+  /* ───────────── التقريب بإصبعين (مثل معرض الصور): تغيير عدد الأعمدة ───────────── */
+  const LEVELS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+  const grid = $('#grid');
+  const autoCols = () => Math.max(2, Math.min(4, Math.floor(window.innerWidth / 190)));
+  let cols = +store.get('cols') || 0;                  // 0 = تلقائي حسب حجم الشاشة
+  function setCols(n, silent) {
+    n = LEVELS.includes(n) ? n : LEVELS.reduce((a, b) => Math.abs(b - n) < Math.abs(a - n) ? b : a);
+    grid.style.setProperty('--cols', n);
+    grid.classList.toggle('d1', n >= 3 && n <= 4);     // بطاقة مبسّطة: بلا الباقي والتعبئة
+    grid.classList.toggle('d2', n >= 5 && n <= 6);     // صورة + كود فقط
+    grid.classList.toggle('d3', n >= 7);               // صور مصغّرة فقط
+    grid.dataset.cols = n;
+    if (!silent) toast(`${n} في الصف`, 900);
+    return n;
+  }
+  const curCols = () => +grid.dataset.cols || autoCols();
+  function stepCols(dir, cx, cy) {                     // dir = -1: تكبير (أعمدة أقل) | +1: تصغير (أعمدة أكثر)
+    const cur = curCols();
+    let i = LEVELS.indexOf(cur); if (i < 0) i = LEVELS.findIndex(v => v >= cur);
+    const nx = LEVELS[Math.max(0, Math.min(LEVELS.length - 1, i + dir))];
+    if (nx === cur) return false;
+    const el = cx != null ? (document.elementFromPoint(cx, cy) || document.body).closest('.card') : null;
+    const top0 = el ? el.getBoundingClientRect().top : 0;
+    cols = nx; store.set('cols', String(nx)); setCols(nx);
+    if (el) window.scrollBy(0, el.getBoundingClientRect().top - top0);   // يبقى المنتج تحت أصابعك في مكانه
+    return true;
+  }
+  setCols(cols || autoCols(), true);
+  window.addEventListener('resize', () => { if (!cols) setCols(autoCols(), true); });
+
+  let pinch = null;
+  const dist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  const canPinch = () => state.view === 'all' && !document.body.classList.contains('lock');
+  document.addEventListener('touchstart', e => { pinch = e.touches.length === 2 && canPinch() ? { d: dist(e) } : null; }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2 || !pinch) return;
+    e.preventDefault(); lastPinch = Date.now();
+    const d = dist(e), r = d / pinch.d;
+    const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2, cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (r > 1.28) { stepCols(-1, cx, cy); pinch.d = d; }          // تباعد الأصابع = تكبير
+    else if (r < 0.78) { stepCols(+1, cx, cy); pinch.d = d; }     // تقارب الأصابع = تصغير
+  }, { passive: false });
+  document.addEventListener('touchend', e => { if (pinch) lastPinch = Date.now(); if (e.touches.length < 2) pinch = null; }, { passive: true });
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault()));   // يمنع تكبير صفحة Safari
+  $('#zIn').onclick = () => stepCols(-1);
+  $('#zOut').onclick = () => stepCols(+1);
+
+  window.__catalog = { state, apply, norm, stepCols, curCols };     // للفحص والاختبار فقط
 })();
