@@ -174,3 +174,11 @@ body.lock .tabbar{display:none}
 .meta select{margin-inline:0;min-width:0;max-width:none;font-size:13.5px}
 .mini-switch{gap:6px;font-size:13.5px}
 main{min-height:70vh}
+
+/* السعر في وسط التفاصيل */
+.dprices>div{align-items:center;text-align:center}
+.dprices b{text-align:center}
+/* اختيار حقول الـ PDF */
+.fieldsbox{background:#f6f4f0;border-radius:12px;padding:10px 12px;margin:2px 0 10px}
+.fb-t{display:block;font-size:13.5px;color:var(--mut);margin-bottom:6px;font-weight:600}
+.fb-g{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}

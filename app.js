@@ -382,7 +382,7 @@
   };
 
   /* ───────────── تصدير PDF ───────────── */
-  const LAYOUTS = { 6: [2, 3], 4: [2, 2], 1: [1, 1] };      // [أعمدة, صفوف]
+  const LAYOUTS = { 12: [3, 4], 6: [2, 3], 4: [2, 2], 1: [1, 1] };      // [أعمدة, صفوف]
   let pdfBlob = null, pdfCancel = false, pdfName = 'catalog.pdf';
 
   function pdfScopeItems() {
@@ -395,64 +395,173 @@
     const v = $('#pdfScope').value;
     return v === 'all' ? 'كل المنتجات' : v === 'current' ? (state.company || 'المنتجات المعروضة') : v.slice(3);
   }
-  function pdfScopeColor() {
-    const v = $('#pdfScope').value;
-    if (v.startsWith('co:')) return coColor(v.slice(3));
-    return v === 'current' && state.company ? coColor(state.company) : ORANGE;
+  // كل صفحة تخص شركة واحدة (ليكون شريط الصفحة بلون واسم الشركة الصحيح)
+  function pdfPages(items, per) {
+    const order = [], map = new Map();
+    items.forEach(it => { const c = it.company || ''; if (!map.has(c)) { map.set(c, []); order.push(c); } map.get(c).push(it); });
+    const pages = [];
+    order.forEach(c => { const a = map.get(c); for (let i = 0; i < a.length; i += per) pages.push({ company: c, items: a.slice(i, i + per) }); });
+    return pages;
+  }
+  const PDF_FIELD_IDS = { price: 'pdfFPrice', pack: 'pdfFPack', stock: 'pdfFStock', barcode: 'pdfFBarcode', carton: 'pdfFCarton' };
+  function pdfFields() {
+    const f = {}; Object.keys(PDF_FIELD_IDS).forEach(k => { f[k] = $('#' + PDF_FIELD_IDS[k]).checked; });
+    if (state.customer) { f.pack = f.stock = f.barcode = f.carton = false; }
+    return f;
   }
   function updatePdfInfo() {
-    const n = pdfScopeItems().length, per = $('#pdfLayout').value;
-    $('#pdfInfo').textContent = `${num(n)} مادة — حوالي ${num(Math.ceil(n / per))} صفحة`;
-    $('#pdfStart').disabled = !n;
+    const items = pdfScopeItems(), per = +$('#pdfLayout').value;
+    const pages = pdfPages(items, per).length;
+    $('#pdfInfo').textContent = `${num(items.length)} مادة — ${num(pages)} صفحة`;
+    $('#pdfStart').disabled = !items.length;
   }
   function openPdfSheet() {
     const sel = $('#pdfScope');
     sel.innerHTML = `<option value="current">المعروض حالياً (${num(state.list.length)})</option><option value="all">كل المواد (${num(state.items.length)})</option>` +
       state.companies.map(c => `<option value="co:${esc(c)}">شركة: ${esc(c)}</option>`).join('');
     $('#pdfStock').checked = state.inStock;
-    $('#pdfCartonRow').hidden = state.customer;
-    if (state.customer) $('#pdfCarton').checked = false;
+    let saved = {}; try { saved = JSON.parse(store.get('pdfFields') || '{}'); } catch { /* تجاهل */ }
+    Object.keys(PDF_FIELD_IDS).forEach(k => { $('#' + PDF_FIELD_IDS[k]).checked = k in saved ? !!saved[k] : k !== 'carton'; });
+    $('#pdfFieldsBox').hidden = state.customer;
     $('#pdfDone').hidden = true; $('#pdfProg').hidden = true; $('#pdfText').textContent = '';
     updatePdfInfo(); openSheet('pdfSheet');
   }
   ['pdfScope', 'pdfLayout', 'pdfStock'].forEach(id => $('#' + id).addEventListener('change', updatePdfInfo));
+  Object.values(PDF_FIELD_IDS).forEach(id => $('#' + id).addEventListener('change', () => {
+    const f = {}; Object.keys(PDF_FIELD_IDS).forEach(k => { f[k] = $('#' + PDF_FIELD_IDS[k]).checked; }); store.set('pdfFields', JSON.stringify(f));
+  }));
 
-  function drawCell(g, it, im, x, y, w, h, withCarton) {
-    const k = Math.min(w / 490, h / 405), pad = 18 * k;
-    g.fillStyle = '#f6f5f3'; rr(g, x, y, w, h, 22 * k); g.fill();
-    g.strokeStyle = '#e6e1da'; g.lineWidth = 2; g.stroke();
+  /* باركود EAN-13 / EAN-8 قابل للمسح */
+  const EAN_L = ['0001101', '0011001', '0010011', '0111101', '0100011', '0110001', '0101111', '0111011', '0110111', '0001011'];
+  const EAN_G = ['0100111', '0110011', '0011011', '0100001', '0011101', '0111001', '0000101', '0010001', '0001001', '0010111'];
+  const EAN_R = EAN_L.map(s => s.replace(/[01]/g, c => (c === '0' ? '1' : '0')));
+  const EAN_P = ['LLLLLL', 'LLGLGG', 'LLGGLG', 'LLGGGL', 'LGLLGG', 'LGGLLG', 'LGGGLL', 'LGLGLG', 'LGLGGL', 'LGGLGL'];
+  function eanBits(code) {
+    let c = String(code || '').replace(/\D/g, '');
+    if (c.length === 12) c = '0' + c;
+    if (c.length === 13) {
+      const d = c.split('').map(Number), par = EAN_P[d[0]];
+      let b = '101';
+      for (let i = 0; i < 6; i++) b += (par[i] === 'L' ? EAN_L : EAN_G)[d[i + 1]];
+      b += '01010';
+      for (let i = 7; i < 13; i++) b += EAN_R[d[i]];
+      return b + '101';
+    }
+    if (c.length === 8) {
+      const d = c.split('').map(Number); let b = '101';
+      for (let i = 0; i < 4; i++) b += EAN_L[d[i]];
+      b += '01010';
+      for (let i = 4; i < 8; i++) b += EAN_R[d[i]];
+      return b + '101';
+    }
+    return '';
+  }
+
+  // ارتفاعات عناصر البطاقة بوحدات تصميم (تتكبّر بنسبة عرض البطاقة)
+  const U = { name: 56, code: 30, price: 48, sub: 48, carton: 30, bar: 72, gap: 6, pad: 10 };
+  function cellRows(f) {
+    const r = ['name', 'code'];
+    if (f.price) r.push('price');
+    if (f.pack || f.stock) r.push('sub');
+    if (f.carton) r.push('carton');
+    if (f.barcode) r.push('bar');
+    return r;
+  }
+  function cellScale(w, h, f) {
+    const rows = cellRows(f);
+    const h0 = rows.reduce((s, k) => s + U[k], 0) + U.gap * rows.length + 2 * U.pad;
+    return Math.min(w / 430, 0.60 * h / h0, 1.6);
+  }
+  function box(g, x, y, w, h, r, fill, stroke, lw) {
+    rr(g, x, y, w, h, r);
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); }
+  }
+  function drawCell(g, it, im, x, y, w, h, f, accent) {
+    const k = cellScale(w, h, f), u = n => n * k;
+    const pad = u(U.pad), gap = u(U.gap), bw = w - 2 * pad, bx = x + pad, ink = '#1f1d1b';
+    box(g, x, y, w, h, u(16), '#fff', '#d3ccc0', 2);
+    const rows = cellRows(f);
+    // من الأسفل إلى الأعلى
     let yb = y + h - pad;
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl';
-    if (withCarton && (it.carton > 0 || it.pack > 0)) {
-      g.fillStyle = '#6b655e'; g.font = `${21 * k}px ${FONT}`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const place = key => { const hh = u(U[key]); yb -= hh; const yy = yb; yb -= gap; return yy; };
+    const rev = rows.slice().reverse();
+    const pos = {}; rev.forEach(key => { pos[key] = place(key); });
+
+    if (pos.bar !== undefined) {
+      const yy = pos.bar, hh = u(U.bar);
+      box(g, bx, yy, bw, hh, u(9), '#fff', '#cfc8bd', 2);
+      const bits = eanBits(it.barcode);
+      if (bits) {
+        const mw = Math.max(1, Math.floor(bw / 117 * 4) / 4), tw = mw * 95;   // مساحة فارغة 11 وحدة على الجانبين كما يطلب المعيار
+        const bh = hh - u(27), x0 = bx + (bw - tw) / 2, y0 = yy + u(6);
+        g.fillStyle = '#000';
+        for (let i = 0; i < bits.length; i++) if (bits[i] === '1') {
+          let j = i; while (j < bits.length && bits[j] === '1') j++;
+          g.fillRect(x0 + i * mw, y0, (j - i) * mw, bh); i = j - 1;
+        }
+        g.fillStyle = ink; g.font = `600 ${u(17)}px ${FONT}`; g.direction = 'ltr';
+        g.fillText(String(it.barcode).replace(/\D/g, ''), bx + bw / 2, yy + hh - u(10));
+      } else {
+        g.fillStyle = it.barcode ? ink : '#b3aca2'; g.font = `600 ${u(19)}px ${FONT}`; g.direction = 'ltr';
+        g.fillText(it.barcode ? String(it.barcode) : 'بدون باركود', bx + bw / 2, yy + hh / 2 + 1);
+      }
+      g.direction = 'rtl';
+    }
+    if (pos.carton !== undefined) {
+      const yy = pos.carton, hh = u(U.carton);
+      box(g, bx, yy, bw, hh, u(9), '#faf8f5', '#cfc8bd', 2);
+      g.fillStyle = ink; g.font = `600 ${u(18)}px ${FONT}`; g.direction = 'rtl';
+      g.fillText(`سعر الكارتون: ${ltr(fmt(it.carton))}`, bx + bw / 2, yy + hh / 2 + 1);
+    }
+    if (pos.sub !== undefined) {
+      const yy = pos.sub, hh = u(U.sub);
       const parts = [];
-      if (it.carton > 0) parts.push(`الكارتون: ${ltr(fmt(it.carton))}`);
-      if (it.pack > 0) parts.push(`التعبئة: ${ltr(num(it.pack))}`);
-      g.fillText(parts.join('   •   '), x + w / 2, yb - 14 * k); yb -= 34 * k;
+      if (f.pack) parts.push({ lbl: 'التعبئة', val: it.pack > 0 ? num(it.pack) : '—', bad: false });
+      if (f.stock) parts.push({ lbl: 'الباقي', val: it.stock > 0 ? num(it.stock) : 'غير متوفر', bad: it.stock <= 0, low: it.stock > 0 && it.stock <= 10 });
+      const sg = u(8), sw = (bw - sg * (parts.length - 1)) / parts.length;
+      parts.forEach((p, n) => {
+        const sx = bx + bw - sw - n * (sw + sg);                  // الأول يمين
+        box(g, sx, yy, sw, hh, u(9), p.bad ? '#b3261e' : '#f3f1ed', p.bad ? '#b3261e' : '#cfc8bd', 2);
+        g.direction = 'rtl';
+        if (p.bad) { g.fillStyle = '#fff'; g.font = `bold ${u(23)}px ${FONT}`; g.fillText(`${p.lbl}: ${p.val}`, sx + sw / 2, yy + hh / 2 + 1); }
+        else {
+          g.fillStyle = '#7a736a'; g.font = `600 ${u(15.5)}px ${FONT}`; g.fillText(p.lbl, sx + sw / 2, yy + hh * 0.27);
+          g.fillStyle = p.low ? '#b45309' : ink; g.font = `bold ${u(25)}px ${FONT}`; g.direction = 'ltr'; g.fillText(p.val, sx + sw / 2, yy + hh * 0.69); g.direction = 'rtl';
+        }
+      });
     }
-    const bh = 48 * k;
-    g.fillStyle = ORANGE; rr(g, x + pad, yb - bh, w - 2 * pad, bh, bh / 2); g.fill();
-    g.fillStyle = '#fff'; g.font = `bold ${27 * k}px ${FONT}`; g.direction = 'ltr';
-    g.fillText(fmt(it.price), x + w / 2, yb - bh / 2 + 1); g.direction = 'rtl';
-    yb -= bh + 8 * k;
-    g.fillStyle = '#8a837b'; g.font = `${21 * k}px ${FONT}`;
-    g.fillText(`الكود: ${ltr(it.code)}`, x + w / 2, yb - 13 * k); yb -= 30 * k;
-    g.fillStyle = '#1f1d1b'; g.font = `bold ${25 * k}px ${FONT}`;
-    const lines = wrap(g, it.name, w - 2 * pad).slice(0, 2);
-    lines.slice().reverse().forEach((t, n) => g.fillText(t, x + w / 2, yb - 17 * k - n * 33 * k));
-    yb -= lines.length * 33 * k + 6 * k;
-    const iy = y + pad, ih = yb - iy;
-    if (im) drawContain(g, im, x + pad, iy, w - 2 * pad, ih);
-    else { g.fillStyle = '#c9c2b8'; g.font = `bold ${40 * k}px ${FONT}`; g.direction = 'ltr'; g.fillText(it.code, x + w / 2, iy + ih / 2); g.direction = 'rtl'; }
-    if (it.stock <= 0) {
-      g.fillStyle = '#b3261e'; const bw = 120 * k, bh2 = 32 * k; rr(g, x + w - pad - bw, y + pad, bw, bh2, bh2 / 2); g.fill();
-      g.fillStyle = '#fff'; g.font = `bold ${18 * k}px ${FONT}`; g.fillText('غير متوفر', x + w - pad - bw / 2, y + pad + bh2 / 2 + 1);
+    if (pos.price !== undefined) {
+      const yy = pos.price, hh = u(U.price);
+      box(g, bx, yy, bw, hh, u(11), '#fff', accent, Math.max(2.5, u(3.5)));
+      g.fillStyle = ink; g.font = `bold ${u(35)}px ${FONT}`; g.direction = 'ltr';
+      g.fillText(fmt(it.price), bx + bw / 2, yy + hh / 2 + 1); g.direction = 'rtl';
     }
+    {
+      const yy = pos.code, hh = u(U.code);
+      box(g, bx, yy, bw, hh, u(9), '#efece7', '#cfc8bd', 2);
+      g.fillStyle = ink; g.font = `bold ${u(23)}px ${FONT}`; g.direction = 'ltr';
+      g.fillText(String(it.code), bx + bw / 2, yy + hh / 2 + 1); g.direction = 'rtl';
+    }
+    {
+      const yy = pos.name, hh = u(U.name);
+      box(g, bx, yy, bw, hh, u(9), '#fff', '#cfc8bd', 2);
+      g.fillStyle = ink; g.font = `bold ${u(23)}px ${FONT}`; g.direction = 'rtl';
+      const lines = wrap(g, it.name, bw - u(16)).slice(0, 2);
+      if (lines.length === 1) g.fillText(lines[0], bx + bw / 2, yy + hh / 2 + 1);
+      else lines.forEach((t, n) => g.fillText(t, bx + bw / 2, yy + hh / 2 + (n - 0.5) * u(25) + 1));
+    }
+    // الصورة في الأعلى
+    const iy = y + pad, ih = yb + gap - iy - gap;       // ما تبقّى فوق العناصر
+    box(g, bx, iy, bw, ih, u(12), '#f5f3f0', null, 0);
+    if (im) drawContain(g, im, bx + u(6), iy + u(6), bw - u(12), ih - u(12));
+    else { g.fillStyle = '#c9c2b8'; g.font = `bold ${u(34)}px ${FONT}`; g.direction = 'ltr'; g.fillText(String(it.code), bx + bw / 2, iy + ih / 2); g.direction = 'rtl'; }
   }
 
   async function buildPdf(items, opt, onProgress) {
     const W = 1050, H = 1485, [cols, rows] = LAYOUTS[opt.layout], per = cols * rows;
-    const pages = Math.ceil(items.length / per);
+    const pgs = pdfPages(items, per), pages = pgs.length;
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d'); g.direction = 'rtl';
     const today = new Date().toISOString().slice(0, 10);
@@ -464,25 +573,28 @@
 
     for (let p = 0; p < pages; p++) {
       if (pdfCancel) return null;
-      const slice = items.slice(p * per, (p + 1) * per);
+      const slice = pgs[p].items, co = pgs[p].company;
+      const color = co ? coColor(co) : ORANGE, fg = textOn(color);
       const imgs = await Promise.all(slice.map(it => loadImg(
         (per >= 6 ? [imgPath(it, 'thumbs')] : [imgPath(it, 'full'), imgPath(it, 'thumbs')]).filter(Boolean))));
 
       g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
-      g.fillStyle = opt.color; g.fillRect(0, 0, W, 104);
-      g.fillStyle = textOn(opt.color); g.textBaseline = 'middle';
-      g.textAlign = 'right'; g.direction = 'rtl'; g.font = `bold 42px ${FONT}`; g.fillText(opt.title, W - 40, 54);
-      g.textAlign = 'left'; g.direction = 'ltr'; g.font = `24px ${FONT}`; g.fillText(today, 40, 54);
+      // شريط الصفحة بلون الشركة: اسم الشركة يميناً · BİRİNCİLER يساراً
+      g.fillStyle = color; g.fillRect(0, 0, W, 104);
+      g.fillStyle = fg; g.textBaseline = 'middle';
+      g.textAlign = 'right'; g.direction = 'rtl'; g.font = `bold 46px ${FONT}`; g.fillText(co || opt.title, W - 40, 54);
+      g.textAlign = 'left'; g.direction = 'ltr'; g.font = `bold 36px ${FONT}`; g.fillText('BİRİNCİLER', 40, 54);
       g.direction = 'rtl';
 
       const mx = 40, gap = 22, top = 128, bottom = H - 70;
       const cw = (W - 2 * mx - gap * (cols - 1)) / cols, ch = (bottom - top - gap * (rows - 1)) / rows;
       slice.forEach((it, n) => {
         const col = n % cols, row = Math.floor(n / cols);
-        drawCell(g, it, imgs[n], W - mx - cw - col * (cw + gap), top + row * (ch + gap), cw, ch, opt.carton);
+        drawCell(g, it, imgs[n], W - mx - cw - col * (cw + gap), top + row * (ch + gap), cw, ch, opt.fields, color);
       });
       g.fillStyle = '#9a938a'; g.font = `22px ${FONT}`; g.textAlign = 'center'; g.direction = 'ltr';
-      g.fillText(`${p + 1} / ${pages}`, W / 2, H - 34); g.direction = 'rtl';
+      g.fillText(`${p + 1} / ${pages}`, W / 2, H - 34);
+      g.textAlign = 'left'; g.fillText(today, 40, H - 34); g.textAlign = 'center'; g.direction = 'rtl';
 
       const jb = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
       const im = 3 + 3 * p, ct = im + 1, pg = im + 2;
@@ -513,7 +625,7 @@
     const prog = $('#pdfProg'); prog.hidden = false; prog.value = 0;
     try {
       const blob = await buildPdf(items, {
-        layout: $('#pdfLayout').value, color: pdfScopeColor(), carton: $('#pdfCarton').checked && !state.customer, title: pdfScopeTitle()
+        layout: $('#pdfLayout').value, fields: pdfFields(), title: pdfScopeTitle()
       }, (d, t) => { prog.max = t; prog.value = d; $('#pdfText').textContent = `جارٍ الإنشاء… صفحة ${d} من ${t}`; });
       if (!blob) { $('#pdfText').textContent = 'تم الإيقاف'; }
       else {
