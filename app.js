@@ -177,12 +177,13 @@
   function cardHtml(it, i) {
     const t = imgPath(it, 'thumbs');
     const im = t ? `<img src="${t}" loading="lazy" decoding="async" alt="">` : `<div class="ph">${esc(it.code)}</div>`;
-    let info = '';
-    if (it.stock <= 0) info = '<div class="cinfo"><span class="half out">غير متوفر</span></div>';
-    else if (!state.customer) info = `<div class="cinfo"><span class="half st${it.stock <= 10 ? ' low' : ''}"><small>الباقي</small><b>${num(it.stock)}</b></span>` +
-      (it.pack > 0 ? `<span class="half pk"><small>التعبئة</small><b>${num(it.pack)}</b></span>` : '') + '</div>';
-    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}</div>` +
-      `<div class="cname">${esc(it.name)}</div>${info}<div class="cfoot"><span class="ccode">${esc(it.code)}</span><span class="cprice">${fmt(it.price)}</span></div></button>`;
+    const badge = it.stock <= 0 ? '<span class="outb">غير متوفر</span>' : '';
+    const pk = (!state.customer && it.pack > 0) ? `<span class="half pk"><small>التعبئة</small><b>${num(it.pack)}</b></span>` : '';
+    const st = (!state.customer && it.stock > 0) ? `<span class="half st${it.stock <= 10 ? ' low' : ''}"><small>الباقي</small><b>${num(it.stock)}</b></span>` : '';
+    const info = (pk || st) ? `<div class="cinfo">${pk}${st}</div>` : '';
+    const price = it.price > 0 ? `<span class="cprice">${num(it.price)}<i> IQD</i></span>` : '<span class="cprice">—</span>';
+    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}${badge}</div>` +
+      `<div class="cname">${esc(it.name)}</div><div class="cfoot"><span class="ccode">${esc(it.code)}</span>${price}</div>${info}</button>`;
   }
 
   function renderMore() {
@@ -755,14 +756,39 @@
   function setCols(n, silent) {
     n = LEVELS.includes(n) ? n : LEVELS.reduce((a, b) => Math.abs(b - n) < Math.abs(a - n) ? b : a);
     grid.style.setProperty('--cols', n);
-    grid.classList.toggle('d1', n >= 3 && n <= 4);     // بطاقة مبسّطة: بلا الباقي والتعبئة
-    grid.classList.toggle('d2', n >= 5 && n <= 6);     // صورة + كود فقط
-    grid.classList.toggle('d3', n >= 7);               // صور مصغّرة فقط
     grid.dataset.cols = n;
+    updTier();
     if (!silent) toast(`${n} في الصف`, 900);
     return n;
   }
   const curCols = () => +grid.dataset.cols || autoCols();
+  /* المعلومات تتناقص حسب العرض الفعلي للبطاقة (لا حسب عدد الأعمدة فقط):
+     0: كل شيء · 1: بدون تجاور السعر والكود · 2: بلا الاسم · 3: بلا التعبئة والباقي · 4: كود فقط · 5: صور فقط */
+  function updTier() {
+    const w = grid.clientWidth; if (!w) return;
+    const n = +grid.dataset.cols || autoCols();
+    const cw = (w - 28 - 12 * (n - 1)) / n;
+    const t = cw >= 190 ? 0 : cw >= 150 ? 1 : cw >= 120 ? 2 : cw >= 90 ? 3 : cw >= 62 ? 4 : 5;
+    if (grid.dataset.t !== String(t)) grid.dataset.t = t;
+  }
+  if ('ResizeObserver' in window) new ResizeObserver(updTier).observe(grid);
+  window.addEventListener('resize', updTier);
+
+  /* ما الذي يظهر في البطاقة (من الإعدادات) */
+  const CARD_F = ['name', 'code', 'price', 'pack', 'stock'];
+  let cardF = { name: true, code: true, price: true, pack: true, stock: true };
+  try { Object.assign(cardF, JSON.parse(store.get('cardf') || '{}')); } catch { /* تجاهل */ }
+  function applyCardF() {
+    CARD_F.forEach(k => grid.classList.toggle('hf-' + k, !cardF[k]));
+    grid.classList.toggle('hf-foot', !cardF.code && !cardF.price);
+    grid.classList.toggle('hf-info', !cardF.pack && !cardF.stock);
+  }
+  applyCardF();
+  CARD_F.forEach(k => {
+    const el = $('#optF' + k[0].toUpperCase() + k.slice(1)); if (!el) return;
+    el.checked = cardF[k];
+    el.addEventListener('change', () => { cardF[k] = el.checked; store.set('cardf', JSON.stringify(cardF)); applyCardF(); });
+  });
   function stepCols(dir, cx, cy) {                     // dir = -1: تكبير (أعمدة أقل) | +1: تصغير (أعمدة أكثر)
     const cur = curCols();
     let i = LEVELS.indexOf(cur); if (i < 0) i = LEVELS.findIndex(v => v >= cur);

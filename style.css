@@ -39,10 +39,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 /* ── الشبكة ── */
 .grid{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:12px;padding:14px 14px calc(40px + var(--safe-b));touch-action:pan-y}
 html,body{touch-action:pan-x pan-y}
-.card{display:flex;flex-direction:column;gap:8px;background:#fff;border-radius:18px;padding:15px 10px 10px;text-align:start;
+.card{display:flex;flex-direction:column;gap:6px;background:#fff;border-radius:16px;padding:12px 8px 8px;text-align:start;
   box-shadow:inset 0 6px 0 var(--co,transparent),0 1px 2px rgba(0,0,0,.05);transition:transform .08s}
 .card:active{transform:scale(.98)}
-.cimg{position:relative;aspect-ratio:1;display:grid;place-items:center;background:#f6f5f3;border-radius:12px;overflow:hidden}
+.cimg{position:relative;aspect-ratio:4/3;display:grid;place-items:center;background:#f6f5f3;border-radius:12px;overflow:hidden}
 .cimg img{width:100%;height:100%;object-fit:contain}
 .ph{display:grid;place-items:center;width:100%;height:100%;color:#b8b1a8;font-weight:700;font-size:20px;direction:ltr}
 .cinfo{display:flex;margin-top:2px;border-radius:10px;overflow:hidden;direction:rtl;border:1.5px solid #d9d3ca}
@@ -149,26 +149,6 @@ body.lock .tabbar{display:none}
 .zoom{display:flex;gap:6px}
 .zoom button{width:34px;height:34px;border-radius:10px;background:#fff;border:1.5px solid var(--line);font-size:20px;line-height:1;font-weight:700}
 .zoom button:active{background:#eee9e2}
-.grid.d1{gap:9px;padding-inline:10px}
-.grid.d1 .card{padding:12px 6px 6px;border-radius:14px;gap:5px}
-.grid.d1 .cinfo{display:none}
-.grid.d1 .cname{font-size:12.5px;line-height:1.35;height:2.7em}
-.grid.d1 .ccode{font-size:14px;border-width:2px;border-radius:8px;padding:1px 4px}
-.grid.d1 .cprice{font-size:12px;padding:3px 2px;border-radius:8px;white-space:nowrap;overflow:hidden}
-.grid.d1 .ph{font-size:15px}
-.grid.d2{gap:7px;padding-inline:8px}
-.grid.d2 .card{padding:10px 4px 4px;border-radius:12px;gap:4px;box-shadow:inset 0 5px 0 var(--co,transparent)}
-.grid.d2 .cname,.grid.d2 .cinfo,.grid.d2 .cprice{display:none}
-.grid.d2 .cimg{border-radius:8px}
-.grid.d2 .ccode{font-size:12px;border-width:1.5px;border-radius:6px;padding:0 2px}
-.grid.d2 .ph{font-size:12px}
-.grid.d3{gap:5px;padding-inline:6px}
-.grid.d3 .card{padding:6px 2px 2px;border-radius:9px;gap:2px;box-shadow:inset 0 4px 0 var(--co,transparent)}
-.grid.d3 .cname,.grid.d3 .cinfo,.grid.d3 .cprice{display:none}
-.grid.d3 .cimg{border-radius:6px}
-.grid.d3 .ccode{font-size:9.5px;border:0;padding:0;background:none;font-weight:700}
-.grid.d3 .ph{font-size:10px}
-
 .meta{gap:8px}
 .meta #count,.mini-switch{white-space:nowrap}
 .meta select{margin-inline:0;min-width:0;max-width:none;font-size:13.5px}
@@ -182,3 +162,42 @@ main{min-height:70vh}
 .fieldsbox{background:#f6f4f0;border-radius:12px;padding:10px 12px;margin:2px 0 10px}
 .fb-t{display:block;font-size:13.5px;color:var(--mut);margin-bottom:6px;font-weight:600}
 .fb-g{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+
+/* ═══ بطاقة: صورة مستطيلة + معلومات تحتها تتناقص مع التصغير ═══ */
+.outb{position:absolute;top:6px;inset-inline-start:6px;background:#b3261e;color:#fff;font-size:11px;font-weight:700;padding:1px 9px;border-radius:999px;line-height:1.5}
+.cname{font-size:14px;height:2.8em}
+.cfoot{display:flex;gap:5px;direction:ltr;margin-top:0;flex-direction:row}
+.ccode{flex:1 1 0;min-width:0;padding:3px 4px;font-size:15px;border-width:2px;overflow:hidden;white-space:nowrap}
+.cprice{flex:1.5 1 0;min-width:0;padding:4px 4px;font-size:16px;overflow:hidden}
+.cprice i{font-style:normal;font-size:.68em;opacity:.9}
+.cinfo{margin-top:0}
+.half{padding:3px 4px;gap:4px}
+.half small{font-size:11px}
+.half b{font-size:14px}
+.grid[data-t="1"] .cfoot,.grid[data-t="2"] .cfoot,.grid[data-t="3"] .cfoot{flex-direction:column}
+.grid[data-t="1"] .ccode,.grid[data-t="1"] .cprice,.grid[data-t="2"] .ccode,.grid[data-t="2"] .cprice,.grid[data-t="3"] .ccode,.grid[data-t="3"] .cprice{flex:none}
+.grid[data-t="1"] .ccode{font-size:14px}
+.grid[data-t="1"] .cprice{font-size:15px}
+.grid[data-t="2"] .cname,.grid[data-t="3"] .cname,.grid[data-t="4"] .cname,.grid[data-t="5"] .cname{display:none}
+.grid[data-t="2"] .card,.grid[data-t="3"] .card{padding:10px 6px 6px;border-radius:13px;gap:5px}
+.grid[data-t="2"] .cprice i,.grid[data-t="3"] .cprice i{display:none}
+.grid[data-t="2"] .ccode{font-size:13px;border-width:1.5px;padding:1px 3px}
+.grid[data-t="2"] .cprice{font-size:13px;padding:3px 2px}
+.grid[data-t="2"] .half{gap:3px;padding:3px 2px}
+.grid[data-t="2"] .half small{font-size:9.5px}
+.grid[data-t="2"] .half b{font-size:12.5px}
+.grid[data-t="3"] .cinfo,.grid[data-t="4"] .cinfo,.grid[data-t="5"] .cinfo{display:none}
+.grid[data-t="3"],.grid[data-t="4"]{gap:7px;padding-inline:8px}
+.grid[data-t="3"] .ccode{font-size:11.5px;border-width:1.5px;border-radius:7px;padding:0 2px}
+.grid[data-t="3"] .cprice{font-size:11.5px;padding:2px 1px;border-radius:7px}
+.grid[data-t="4"] .card,.grid[data-t="5"] .card{padding:8px 3px 3px;border-radius:10px;gap:3px;box-shadow:inset 0 4px 0 var(--co,transparent)}
+.grid[data-t="4"] .cprice,.grid[data-t="5"] .cprice{display:none}
+.grid[data-t="4"] .ccode{font-size:10.5px;border-width:1px;border-radius:5px;padding:0 1px}
+.grid[data-t="5"]{gap:4px;padding-inline:5px}
+.grid[data-t="5"] .cfoot{display:none}
+.grid[data-t="4"] .outb,.grid[data-t="5"] .outb{font-size:8px;padding:0 5px;top:3px;inset-inline-start:3px}
+.grid[data-t="5"] .card{padding:5px 2px 2px;border-radius:8px}
+.grid[data-t="2"] .outb,.grid[data-t="3"] .outb{font-size:10px;padding:0 6px}
+/* إخفاء حقل من الإعدادات */
+.grid.hf-name .cname,.grid.hf-code .ccode,.grid.hf-price .cprice,.grid.hf-pack .half.pk,.grid.hf-stock .half.st,.grid.hf-foot .cfoot,.grid.hf-info .cinfo{display:none!important}
+.grid.hf-name .cname{height:0}
