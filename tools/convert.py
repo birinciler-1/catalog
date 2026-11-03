@@ -36,7 +36,7 @@ ALIASES = {
     "pack": ["عدد التعبئة", "التعبئة", "pack"],
     "price": ["سعر المفرد", "سعر القطعة", "المفرد", "سعر", "السعر", "price"],
     "carton": ["سعر الكارتون", "سعر الكارتونة", "الكارتون", "carton"],
-    "company": ["الشركة", "شركة", "company", "brand"],
+    "company": ["الشركة", "الشركات", "شركة", "شركات", "company", "brand"],
     "category": ["القسم", "قسم", "التصنيف", "النوع", "category"],
     "color": ["لون الشركة", "اللون", "لون", "color"],
 }
@@ -147,7 +147,7 @@ def classify(v):
         return "pack"
     if "باقي" in h or "مخزون" in h or "stock" in h:
         return "stock"
-    if "شركه" in h or "شركة" in h:
+    if "شرك" in h or "company" in h or "brand" in h:      # الشركة / الشركات / شركة / Company
         return "company"
     if "قسم" in h or "تصنيف" in h:
         return "category"

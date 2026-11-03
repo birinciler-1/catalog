@@ -33,6 +33,7 @@
   <div class="chips" id="chips" hidden></div>
   <div class="meta" id="meta">
     <span id="count"></span>
+    <span class="zoom"><button type="button" id="zOut" aria-label="تصغير الصور">−</button><button type="button" id="zIn" aria-label="تكبير الصور">+</button></span>
     <select id="sort" aria-label="الترتيب">
       <option value="file">الترتيب الأصلي</option>
       <option value="code">حسب الكود</option>
@@ -84,13 +85,23 @@
     </label>
     <label class="field"><span>عدد المنتجات في الصفحة</span>
       <select id="pdfLayout">
-        <option value="6">6 منتجات (أصغر حجماً)</option>
+        <option value="12">12 منتج (مضغوط)</option>
+        <option value="6" selected>6 منتجات</option>
         <option value="4">4 منتجات</option>
         <option value="1">منتج واحد بالتفصيل</option>
       </select>
     </label>
     <label class="check"><input type="checkbox" id="pdfStock"><span>المتوفر فقط (الباقي)</span></label>
-    <label class="check" id="pdfCartonRow"><input type="checkbox" id="pdfCarton"><span>إظهار سعر الكارتون وعدد التعبئة</span></label>
+    <div id="pdfFieldsBox" class="fieldsbox">
+      <span class="fb-t">ما الذي يظهر في البطاقة؟</span>
+      <div class="fb-g">
+        <label class="check"><input type="checkbox" id="pdfFPrice" checked><span>السعر</span></label>
+        <label class="check"><input type="checkbox" id="pdfFPack" checked><span>التعبئة</span></label>
+        <label class="check"><input type="checkbox" id="pdfFStock" checked><span>عدد الباقي</span></label>
+        <label class="check"><input type="checkbox" id="pdfFBarcode" checked><span>الباركود</span></label>
+        <label class="check"><input type="checkbox" id="pdfFCarton"><span>سعر الكارتون</span></label>
+      </div>
+    </div>
     <p class="hint" id="pdfInfo"></p>
 
     <progress id="pdfProg" value="0" max="1" hidden></progress>
@@ -116,6 +127,16 @@
       <span><b>وضع عرض الزبون</b><small>يُخفي سعر الكارتون والكمية والباركود من الشاشة والصور والـ PDF</small></span>
       <input type="checkbox" id="optCustomer">
     </label>
+
+    <section>
+      <h4>ما يظهر في بطاقات المواد</h4>
+      <p class="hint">عند تصغير البطاقات تختفي المعلومات تلقائياً بحسب المساحة: الاسم أولاً ثم التعبئة والباقي ثم السعر وآخرها الكود.</p>
+      <label class="check"><input type="checkbox" id="optFName"><span>اسم المادة</span></label>
+      <label class="check"><input type="checkbox" id="optFCode"><span>الكود</span></label>
+      <label class="check"><input type="checkbox" id="optFPrice"><span>السعر</span></label>
+      <label class="check"><input type="checkbox" id="optFPack"><span>التعبئة</span></label>
+      <label class="check"><input type="checkbox" id="optFStock"><span>عدد الباقي</span></label>
+    </section>
 
     <section>
       <h4>الأسعار والبيانات</h4>
