@@ -1,1 +1,1 @@
-NEW BIR CATALOG.xlsx / المنتجات: اسم المادة=name | كود=code | باركود=barcode | عدد الباقي=stock | عدد التعبئة=pack | سعر=price | سعر الكارتون=carton | الشركات=company
+catakog .xlsx / المنتجات: اسم المادة=name | كود=code | باركود=barcode | عدد الباقي=stock | عدد التعبئة=pack | سعر=price | سعر الكارتون=carton | الشركات=company
