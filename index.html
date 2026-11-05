@@ -72,6 +72,7 @@
       <button class="btn primary" id="dShare" type="button"><span data-icon="share"></span><span>مشاركة الصورة</span></button>
       <button class="btn" id="dShareText" type="button">مشاركة نص</button>
     </div>
+    <div class="dremove"><button class="btn danger" id="dRemove" type="button">إزالة من الكتالوج</button></div>
   </div>
 </div>
 
@@ -129,6 +130,12 @@
     </label>
 
     <section>
+      <h4>المواد المزالة</h4>
+      <p class="hint">مواد أزلتها من الكتالوج (من زر الإزالة داخل بطاقة المادة) وتبقى محفوظة هنا وتستطيع إرجاعها.</p>
+      <button class="btn" id="btnRemoved" type="button">🗑 المواد المزالة (<span id="remCount">0</span>)</button>
+    </section>
+
+    <section>
       <h4>ما يظهر في بطاقات المواد</h4>
       <p class="hint">عند تصغير البطاقات تختفي المعلومات تلقائياً بحسب المساحة: الاسم أولاً ثم التعبئة والباقي ثم السعر وآخرها الكود.</p>
       <label class="check"><input type="checkbox" id="optFName"><span>اسم المادة</span></label>
@@ -169,6 +176,16 @@
 </nav>
 
 <div id="toast" role="status" aria-live="polite"></div>
+
+<!-- المواد المزالة -->
+<div id="removedSheet" class="overlay" hidden role="dialog" aria-modal="true">
+  <div class="panel sheet">
+    <div class="sheet-head"><h3>المواد المزالة</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
+    <p class="hint" id="remInfo"></p>
+    <div id="remList"></div>
+    <div class="btnrow"><button class="btn" id="remAll" type="button">إرجاع الكل</button></div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
