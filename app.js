@@ -13,7 +13,7 @@
   };
 
   const state = {
-    items: [], companies: [], colors: {}, list: [],
+    items: [], all: [], companies: [], colors: {}, list: [],
     q: '', company: '', category: '', view: 'all', sort: store.get('sort') || 'file', inStock: false,
     shown: 0, version: '', updated: '', cur: -1,
     customer: store.get('customer') === '1'
@@ -74,14 +74,37 @@
     } finally { clearTimeout(t); }
   }
 
+  /* ───────────── المواد المزالة (على هذا الجهاز فقط) ─────────────
+     تُحفظ بالكود مع المخزون وقت الإزالة. تحديث الأسعار وحده لا يُرجعها.
+     تعود تلقائياً إذا زاد مخزونها، أو إذا تغيّر مخزون نصف المواد أو أكثر (تحديث مخزون كامل). */
+  let removed = {};
+  try { removed = JSON.parse(store.get('removed') || '{}') || {}; } catch { removed = {}; }
+  const saveRemoved = () => store.set('removed', JSON.stringify(removed));
+  const filterRemoved = () => { state.items = state.all.filter(it => !removed[it.code]); };
+  function reconcileRemoved(prev) {
+    const codes = Object.keys(removed); if (!codes.length) return 0;
+    const cur = new Map(state.all.map(i => [i.code, i]));
+    let tot = 0, ch = 0;
+    if (prev.size) cur.forEach((it, c) => { if (prev.has(c)) { tot++; if (prev.get(c) !== it.stock) ch++; } });
+    const bulk = tot >= 10 && ch / tot >= 0.5;
+    let back = 0;
+    codes.forEach(c => { const it = cur.get(c); if (it && (bulk || it.stock > (removed[c].s || 0))) { delete removed[c]; back++; } });
+    if (back) saveRemoved();
+    return back;
+  }
+
   function applyData(d) {
     state.version = d.version; state.updated = d.updated;
     state.companies = d.companies || [];
     state.colors = d.colors || {};
-    state.items = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')) }));
+    const prev = new Map(state.all.map(i => [i.code, i.stock]));
+    state.all = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')) }));
+    const back = reconcileRemoved(prev);
+    filterRemoved();
+    if (back) setTimeout(() => toast(`رجعت ${back} مادة من المزالة بعد تحديث المخزون ✓`, 2600), 1800);
     if (state.company && !state.companies.includes(state.company)) state.company = '';
     if (state.view === 'companies') buildCompanies(); else apply(false);
-    updateDataInfo();
+    updateDataInfo(); updateRemovedCount();
   }
 
   async function refresh(manual) {
@@ -252,7 +275,44 @@
     $('#detail').hidden = false; document.body.classList.add('lock');
     if (!was) history.pushState({ o: 'detail' }, '');
   }
+  /* ───────────── إزالة مادة من الكتالوج وإرجاعها ───────────── */
+  function updateRemovedCount() { const n = Object.keys(removed).length; const el = $('#remCount'); if (el) el.textContent = num(n); }
+  function refreshViews() { if (state.view === 'companies') buildCompanies(); else apply(false); updateDataInfo(); updateRemovedCount(); }
+  let rmArm = null;
+  function resetRmBtn() { const b = $('#dRemove'); clearTimeout(rmArm); rmArm = null; if (b) { b.textContent = 'إزالة من الكتالوج'; b.classList.remove('armed'); } }
+  $('#dRemove').onclick = () => {
+    const it = state.list[state.cur]; if (!it) return;
+    if (!rmArm) {
+      const b = $('#dRemove'); b.textContent = 'اضغط مرة ثانية للتأكيد'; b.classList.add('armed');
+      rmArm = setTimeout(resetRmBtn, 3500); return;
+    }
+    resetRmBtn();
+    removed[it.code] = { s: it.stock || 0, at: Date.now(), n: it.name, c: it.company };
+    saveRemoved(); filterRemoved(); closeDetail(false); refreshViews();
+    toast('تمت الإزالة — تجدها في الإعدادات › المواد المزالة', 2600);
+  };
+  function restoreItem(code) { delete removed[code]; saveRemoved(); filterRemoved(); refreshViews(); renderRemoved(); }
+  function renderRemoved() {
+    const codes = Object.keys(removed).sort((a, b) => (removed[b].at || 0) - (removed[a].at || 0));
+    const byCode = new Map(state.all.map(i => [i.code, i]));
+    $('#remInfo').textContent = codes.length
+      ? 'هذه المواد مخفية عن الكتالوج في هذا الجهاز فقط. تعود تلقائياً إذا زاد مخزونها أو حُدّث المخزون كاملاً، أما تحديث الأسعار وحده فلا يُرجعها.'
+      : 'لا توجد مواد مزالة.';
+    $('#remAll').hidden = !codes.length;
+    $('#remList').innerHTML = codes.map(c => {
+      const e = removed[c], it = byCode.get(c);
+      const th = it && it.img ? `<img alt="" src="${imgPath(it, 'thumbs')}">` : `<div class="rph">${esc(c)}</div>`;
+      const now = it ? `المخزون الآن: ${num(it.stock)}` : 'غير موجودة في الملف الحالي';
+      return `<div class="remrow">${th}<div class="t"><b>${esc((it && it.name) || e.n || c)}</b><small>${esc(c)} · ${esc((it && it.company) || e.c || '')}</small>` +
+        `<small>عند الإزالة: ${num(e.s)} · ${now}</small></div><button class="btn small" type="button" data-restore="${esc(c)}">إرجاع</button></div>`;
+    }).join('');
+  }
+  $('#remList').addEventListener('click', e => { const b = e.target.closest('[data-restore]'); if (b) restoreItem(b.dataset.restore); });
+  $('#remAll').onclick = () => { removed = {}; saveRemoved(); filterRemoved(); refreshViews(); renderRemoved(); toast('تم إرجاع كل المواد ✓'); };
+  $('#btnRemoved').onclick = () => { renderRemoved(); openSheet('removedSheet'); };
+
   function closeDetail(viaPop) {
+    resetRmBtn();
     $('#detail').hidden = true; document.body.classList.remove('lock');
     if (!viaPop && history.state && history.state.o === 'detail') history.back();
   }
@@ -651,7 +711,7 @@
   /* ───────────── الإعدادات والعمل بدون إنترنت ───────────── */
   function updateDataInfo() {
     const d = state.updated ? new Date(state.updated).toLocaleString('ar-IQ', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
-    $('#dataInfo').textContent = `${num(state.items.length)} مادة في ${state.companies.length} شركة — آخر تحديث للأسعار: ${d}`;
+    $('#dataInfo').textContent = `${num(state.all.length)} مادة في ${state.companies.length} شركة — آخر تحديث للأسعار: ${d}`;
   }
   async function updateStorageInfo() {
     try {
@@ -664,7 +724,7 @@
   async function downloadImages(kind) {
     if (dlBusy) return;
     if (!navigator.serviceWorker || !navigator.serviceWorker.controller) { toast('أغلق التطبيق وافتحه مرة ثانية ثم أعد المحاولة'); return; }
-    const urls = state.items.filter(i => i.img).map(i => imgPath(i, kind));
+    const urls = state.all.filter(i => i.img).map(i => imgPath(i, kind));
     if (!urls.length) { toast('لا توجد صور'); return; }
     dlBusy = true; ['btnDlThumbs', 'btnDlFull'].forEach(id => { $('#' + id).disabled = true; });
     const prog = $('#dlProg'); prog.hidden = false; prog.max = urls.length; prog.value = 0;
@@ -687,7 +747,7 @@
 
   function openSheet(id) { $('#' + id).hidden = false; document.body.classList.add('lock'); }
   function closeSheets() {
-    ['pdfSheet', 'settings'].forEach(id => { $('#' + id).hidden = true; });
+    ['pdfSheet', 'settings', 'removedSheet'].forEach(id => { $('#' + id).hidden = true; });
     if ($('#detail').hidden) document.body.classList.remove('lock');
   }
 
@@ -719,7 +779,7 @@
   $('#sort').addEventListener('change', e => { state.sort = e.target.value; store.set('sort', state.sort); apply(); });
   $('#inStock').addEventListener('change', e => { state.inStock = e.target.checked; apply(); });
   $('#btnPdf').onclick = openPdfSheet;
-  $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; updateDataInfo(); updateStorageInfo(); openSheet('settings'); };
+  $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings'); };
   $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
   $('#btnRefresh').onclick = () => refresh(true);
   $('#btnDlThumbs').onclick = () => downloadImages('thumbs');
