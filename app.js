@@ -253,7 +253,8 @@
     $('#dName').textContent = it.name;
     $('#dPrices').innerHTML =
       `<div class="p-main"><small>سعر المفرد</small><b>${fmt(it.price)}</b></div>` +
-      (!cust && it.carton > 0 ? `<div class="p-sub"><small>سعر الكارتون</small><b>${fmt(it.carton)}</b></div>` : '');
+      (!cust && it.carton > 0 ? `<div class="p-sub"><small>سعر الكارتون</small><b>${fmt(it.carton)}</b></div>` : '') +
+      `<div class="p-code"><small>الكود</small><b>${esc(it.code)}</b></div>`;
     const status = it.stock > 0 ? (cust ? 'متوفر' : `متوفر (${num(it.stock)})`) : 'غير متوفر';
     const rows = [
       ['الكود', it.code, true], ['الشركة', `<span class="cdot" style="background:${coColor(it.company)}"></span>${esc(it.company)}`, false, true],
@@ -830,6 +831,7 @@
     const cw = (w - 28 - 12 * (n - 1)) / n;
     const t = cw >= 190 ? 0 : cw >= 150 ? 1 : cw >= 120 ? 2 : cw >= 90 ? 3 : cw >= 62 ? 4 : 5;
     if (grid.dataset.t !== String(t)) grid.dataset.t = t;
+    grid.style.setProperty('--cw', Math.max(40, Math.round(cw)) + 'px');
   }
   if ('ResizeObserver' in window) new ResizeObserver(updTier).observe(grid);
   window.addEventListener('resize', updTier);

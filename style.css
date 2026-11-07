@@ -218,3 +218,27 @@ main{min-height:70vh}
 .remrow .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .remrow .t b{font-size:15px;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .remrow .t small{color:var(--mut);font-size:12.5px}
+
+/* ═══ كود وسعر بحجم يتناسب مع عرض البطاقة (نصف للكود ونصف للسعر) ═══ */
+.grid{--cw:200px}
+.ccode,.cprice{font-weight:900;line-height:1.15}
+.ccode{flex:1 1 0;font-size:clamp(17px,calc(var(--cw)*.1),46px);padding:calc(var(--cw)*.022) 4px;border-width:max(2px,calc(var(--cw)*.009));border-radius:12px;letter-spacing:.02em}
+.cprice{flex:1 1 0;font-size:clamp(17px,calc(var(--cw)*.092),44px);padding:calc(var(--cw)*.022) 4px;border-radius:12px}
+.cprice i{display:block;font-size:.42em;font-weight:700;letter-spacing:.06em;margin-top:1px}
+.grid[data-t="1"] .ccode{font-size:clamp(18px,calc(var(--cw)*.13),30px)}
+.grid[data-t="1"] .cprice{font-size:clamp(18px,calc(var(--cw)*.12),28px)}
+.grid[data-t="1"] .cprice i{display:inline;font-size:.6em}
+.grid[data-t="2"] .ccode{font-size:16px}
+.grid[data-t="2"] .cprice{font-size:15px}
+.grid[data-t="3"] .ccode{font-size:13px}
+.grid[data-t="3"] .cprice{font-size:12.5px}
+.grid[data-t="4"] .ccode{font-size:11.5px}
+
+/* تفاصيل المادة: بوكس الكود الأبيض تحت السعر */
+.dprices{flex-wrap:wrap}
+.dprices .p-main{order:1}
+.dprices .p-sub{order:2}
+.dprices .p-code{order:3;flex:1 1 100%;background:#fff;color:var(--ink);border:3px solid var(--ink)}
+.dprices .p-code b{font-size:clamp(36px,9vw,58px);font-weight:900;letter-spacing:.04em;line-height:1.1}
+.dprices .p-code small{font-size:14px;opacity:.7;font-weight:700}
+.dprices .p-main b{font-size:clamp(26px,6vw,38px);font-weight:900}
