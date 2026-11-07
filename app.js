@@ -29,7 +29,8 @@
     chevL: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
     grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
     building: '<svg viewBox="0 0 24 24"><path d="M5 21V5l9-2v18"/><path d="M14 9h5v12"/><path d="M9 8h1M9 12h1M9 16h1M17 13h.01M17 17h.01"/></svg>',
-    chevR: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>'
+    chevR: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+    scan: '<svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>'
   };
   document.querySelectorAll('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', ICONS[el.dataset.icon] || ''));
 
@@ -781,7 +782,7 @@
   $('#inStock').addEventListener('change', e => { state.inStock = e.target.checked; apply(); });
   $('#btnPdf').onclick = openPdfSheet;
   $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings'); };
-  $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
+  $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); applyScanBtn(); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
   $('#btnRefresh').onclick = () => refresh(true);
   $('#btnDlThumbs').onclick = () => downloadImages('thumbs');
   $('#btnDlFull').onclick = () => downloadImages('full');
@@ -881,6 +882,88 @@
   ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault()));   // يمنع تكبير صفحة Safari
   $('#zIn').onclick = () => stepCols(-1);
   $('#zOut').onclick = () => stepCols(+1);
+
+  /* ───────────── قارئ الباركود (نفس نظام برنامج البيرينجيلر: html5-qrcode) ─────────────
+     إضافة مستقلة: لا تُحمَّل المكتبة إلا عند الضغط على الزر، والبحث محلي على البيانات المحفوظة (يعمل بدون إنترنت). */
+  const QR_SRCS = ['https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js', 'html5-qrcode.min.js'];
+  let qrPromise = null, scanner = null, scanning = false;
+  const applyScanBtn = () => { $('#btnScan').hidden = state.customer; };
+  applyScanBtn();
+  function loadQr() {
+    if (window.Html5Qrcode) return Promise.resolve();
+    if (qrPromise) return qrPromise;
+    qrPromise = (async () => {
+      for (const src of QR_SRCS) {
+        try {
+          await new Promise((ok, no) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = () => { el.remove(); no(); }; document.head.appendChild(el); });
+          if (window.Html5Qrcode) return;
+        } catch { /* جرّب المصدر التالي */ }
+      }
+      qrPromise = null; throw new Error('qr-lib');
+    })();
+    return qrPromise;
+  }
+  function scanMsg(t, kind) { const el = $('#scanMsg'); el.textContent = t; el.className = 'scan-msg ' + (kind || ''); }
+  const sameCode = (a, b) => {
+    a = String(a || '').trim(); b = String(b || '').trim(); if (!a || !b) return false;
+    if (a.toLowerCase() === b.toLowerCase()) return true;
+    return /^\d+$/.test(a) && /^\d+$/.test(b) && a.replace(/^0+/, '') === b.replace(/^0+/, '');   // UPC-A / EAN-13
+  };
+  async function startCam() {
+    try {
+      const F = Html5QrcodeSupportedFormats;
+      await scanner.start({ facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 120 }, aspectRatio: 1.5,
+          formatsToSupport: [F.EAN_13, F.EAN_8, F.CODE_128, F.CODE_39, F.UPC_A, F.UPC_E, F.ITF, F.CODABAR] },
+        onScanned, () => { });
+      scanMsg('وجّه الكاميرا على الباركود', '');
+    } catch (e) { scanMsg('⚠️ اسمح للكاميرا من إعدادات Safari', 'bad'); console.warn('camera', e); }
+  }
+  async function openScan() {
+    if ($('#scanOvl').hidden === false) return;
+    $('#scanOvl').hidden = false; document.body.classList.add('lock'); scanning = true;
+    scanMsg('جارٍ تشغيل الكاميرا…', '');
+    try { await loadQr(); } catch { scanMsg('⚠️ تعذّر تحميل قارئ الباركود — افتح البرنامج مرة وأنت متصل بالإنترنت ثم حاول', 'bad'); return; }
+    if (!scanning) return;
+    scanner = new Html5Qrcode('qrReader');
+    await startCam();
+  }
+  async function closeScan() {
+    scanning = false;
+    try { if (scanner) await scanner.stop(); } catch { /* تجاهل */ }
+    try { if (scanner) scanner.clear(); } catch { /* تجاهل */ }
+    scanner = null; $('#qrReader').innerHTML = '';
+    $('#scanOvl').hidden = true;
+    if ($('#detail').hidden) document.body.classList.remove('lock');
+  }
+  async function onScanned(code) {
+    if (!scanning) return; scanning = false;
+    try { await scanner.stop(); } catch { /* تجاهل */ }
+    if (navigator.vibrate) navigator.vibrate(120);
+    const hit = state.items.find(it => sameCode(it.barcode, code) || sameCode(it.code, code));
+    if (hit) {
+      scanMsg('✅ ' + hit.name, 'ok');
+      setTimeout(async () => {
+        await closeScan();
+        let idx = state.list.indexOf(hit);
+        if (idx < 0) {                                      // المادة خارج الفلتر الحالي: صفّر الفلاتر
+          state.q = ''; $('#q').value = ''; $('#clear').hidden = true; state.company = ''; state.category = ''; state.inStock = false; $('#inStock').checked = false;
+          if (state.view === 'companies') setView('all'); else apply(false);
+          idx = state.list.indexOf(hit);
+        }
+        if (idx >= 0) openDetail(idx);
+      }, 650);
+      return;
+    }
+    const gone = state.all.find(it => removed[it.code] && (sameCode(it.barcode, code) || sameCode(it.code, code)));
+    scanMsg(gone ? '🗑 مزالة من الكتالوج: ' + gone.name + ' — أرجعها من الإعدادات' : '❌ غير موجود: ' + code, 'bad');
+    setTimeout(async () => {                                // أعد المسح
+      if ($('#scanOvl').hidden || !scanner) return;
+      scanning = true; scanMsg('وجّه الكاميرا على الباركود', ''); await startCam();
+    }, 2500);
+  }
+  $('#btnScan').onclick = openScan;
+  $('#scanClose').onclick = closeScan;
 
   window.__catalog = { state, apply, norm, stepCols, curCols };     // للفحص والاختبار فقط
 })();
