@@ -1,1 +1,1 @@
-dartakatalog.xlsx / المنتجات: اسم المادة=name | كود=code | باركود=barcode | عدد الباقي=stock | عدد التعبئة=pack | سعر=price | سعر الكارتون=carton | الشركات=company
+1.xlsx / ورقة1: اسم المادة=name | كود=code | باركود=barcode | عدد الباقي=stock | عدد التعبئة=pack | سعر=price | سعر الكارتون=carton | الشركات=company
