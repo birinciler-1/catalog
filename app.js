@@ -14,9 +14,10 @@
 
   const state = {
     items: [], all: [], companies: [], colors: {}, list: [],
-    q: '', company: '', category: '', view: 'all', sort: store.get('sort') || 'file', inStock: false,
+    q: '', company: '', category: '', view: 'all', sort: store.get('sort') || 'file', inStock: true,
     shown: 0, version: '', updated: '', cur: -1,
-    customer: store.get('customer') === '1'
+    customer: store.get('customer') === '1',
+    smart: store.get('smart') !== '0'
   };
 
   /* ───────────── أدوات عامة ───────────── */
@@ -64,6 +65,52 @@
       .replace(/\s+/g, ' ').trim();
   }
 
+  /* ───────────── البحث الذكي ─────────────
+     ترتيب النتائج: كود مطابق ← كود يبدأ بالكلمة ← تطابق عادي ← تطابق مرن ← تطابق تقريبي (أخطاء إملائية).
+     المرن: يتجاهل «ال» التعريف والحروف المكررة (مثل: الترمّس / ترمــس / ترمسس).
+     التقريبي: يتحمل حرفاً خاطئاً أو ناقصاً أو مبدلاً في الكلمات الأطول من 3 أحرف (حرفان للأطول من 6). */
+  const stripAl = w => (w.length > 3 && w.startsWith('ال')) ? w.slice(2) : w;
+  const fold = w => w.replace(/([^\d\s])\1+/g, '$1');
+  const foldWord = w => fold(stripAl(w));
+  function near(a, b, k) {                         // مسافة التحرير (مع تبديل حرفين متجاورين) ≤ k
+    const n = a.length, m = b.length;
+    if (Math.abs(n - m) > k) return false;
+    let p2 = null, p1 = Array.from({ length: m + 1 }, (_, j) => j);
+    for (let i = 1; i <= n; i++) {
+      const cur = [i]; let best = i;
+      for (let j = 1; j <= m; j++) {
+        let v = Math.min(p1[j] + 1, cur[j - 1] + 1, p1[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, p2[j - 2] + 1);
+        cur[j] = v; if (v < best) best = v;
+      }
+      if (best > k) return false;
+      p2 = p1; p1 = cur;
+    }
+    return p1[m] <= k;
+  }
+  function searchFields(it) {
+    const words = norm([it.name, it.company, it.category].join(' ')).split(' ').filter(w => w && !/\d/.test(w));
+    return {
+      _c: norm(it.code),
+      _f: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')).split(' ').map(foldWord).join(' '),
+      _fw: words.map(foldWord)
+    };
+  }
+  const looseHas = (it, t) => { const f = foldWord(t); return !!f && it._f.includes(f); };
+  function fuzzyHas(it, t) {
+    if (looseHas(it, t)) return true;
+    const f = foldWord(t), L = f.length;
+    if (L < 4 || /\d/.test(f)) return false;
+    const k = L >= 7 ? 2 : 1;
+    return it._fw.some(w => near(f, w, k) || (w.length > L && near(f, w.slice(0, L), k)));
+  }
+  function smartRank(it, qn, toks) {               // 9 = لا يطابق
+    if (toks.every(t => it._s.includes(t))) return it._c === qn ? 0 : it._c.startsWith(qn) ? 1 : 2;
+    if (!state.smart) return 9;                     // البحث الذكي متوقف: تطابق حرفي فقط
+    if (toks.every(t => looseHas(it, t))) return 3;
+    return toks.every(t => fuzzyHas(it, t)) ? 4 : 9;
+  }
+
   /* ───────────── تحميل البيانات ───────────── */
   async function fetchData() {
     const ctl = new AbortController();
@@ -99,7 +146,7 @@
     state.companies = d.companies || [];
     state.colors = d.colors || {};
     const prev = new Map(state.all.map(i => [i.code, i.stock]));
-    state.all = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')) }));
+    state.all = (d.items || []).map(it => ({ ...it, _s: norm([it.name, it.code, it.barcode, it.company, it.category].join(' ')), ...searchFields(it) }));
     const back = reconcileRemoved(prev);
     filterRemoved();
     if (back) setTimeout(() => toast(`رجعت ${back} مادة من المزالة بعد تحديث المخزون ✓`, 2600), 1800);
@@ -166,11 +213,16 @@
   function apply(resetScroll = true) {
     const qn = norm(state.q);
     const toks = qn ? qn.split(' ') : [];
-    let r = state.items.filter(it =>
+    const pool = state.items.filter(it =>
       (!state.company || it.company === state.company) &&
       (!state.category || it.category === state.category) &&
-      (!state.inStock || it.stock > 0) &&
-      toks.every(t => it._s.includes(t)));
+      (!state.inStock || it.stock > 0));
+    const rk = new Map();                       // رتبة كل نتيجة في البحث الذكي
+    let r = pool;
+    if (toks.length) {
+      r = [];
+      for (const it of pool) { const s = smartRank(it, qn, toks); if (s < 9) { rk.set(it, s); r.push(it); } }
+    }
     if (state.sort !== 'file') {
       const col = new Intl.Collator('ar'), cx = {}; state.companies.forEach((c, k) => { cx[c] = k; });
       const by = {
@@ -183,12 +235,16 @@
       if (by) r = r.map((it, k) => [k, it]).sort((x, y) => by(x[1], y[1]) || x[0] - y[0]).map(x => x[1]);
     }
     buildCats();
-    if (qn) {                                   // تطابق الكود أولاً
-      const rank = it => { const c = norm(it.code); return c === qn ? 0 : c.startsWith(qn) ? 1 : 2; };
+    let approx = 0;
+    if (qn) {                                   // الأدق أولاً (الكود ثم الاسم ثم التقريبي)، وداخل كل رتبة يبقى الترتيب المختار
+      const rank = it => { const s = rk.get(it) ?? 9; return s <= 1 ? s : s === 2 ? 2 : 3 + s; };
       r = r.map((it, i) => [rank(it), i, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+      approx = r.filter(it => rk.get(it) >= 3).length;
     }
     state.list = r;
-    $('#count').textContent = `${num(r.length)} مادة`;
+    $('#count').textContent = approx
+      ? (approx === r.length ? `${num(r.length)} نتيجة قريبة من بحثك` : `${num(r.length)} مادة · ${num(approx)} قريبة`)
+      : `${num(r.length)} مادة`;
     const g = $('#grid'); g.innerHTML = ''; state.shown = 0;
     $('#empty').hidden = r.length > 0 || !state.items.length;
     if (!r.length && state.items.length) showEmpty('لا توجد نتائج مطابقة');
@@ -779,10 +835,27 @@
   });
   $('#sort').value = state.sort;
   $('#sort').addEventListener('change', e => { state.sort = e.target.value; store.set('sort', state.sort); apply(); });
+  $('#inStock').checked = state.inStock;   // «المتوفر فقط» مفعّل تلقائياً في كل فتح، والمستخدم يلغيه بنفسه
   $('#inStock').addEventListener('change', e => { state.inStock = e.target.checked; apply(); });
+  /* ───────────── المظهر ───────────── */
+  const THEMES = { classic: ['الحالي', '#c25e27'], dark: ['داكن', '#16140f'], sage: ['أخضر هادئ', '#3f7d5c'], ocean: ['أزرق بحري', '#2f6f9f'] };
+  const THEME_BAR = { classic: '#c25e27', dark: '#151413', sage: '#3f7d5c', ocean: '#2f6f9f' };   // لون شريط المتصفح
+  function applyTheme(name) {
+    if (!THEMES[name]) name = 'classic';
+    document.documentElement.dataset.theme = name;
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', THEME_BAR[name]);
+    document.querySelectorAll('#themes [data-theme]').forEach(b => b.classList.toggle('on', b.dataset.theme === name));
+    return name;
+  }
+  applyTheme(store.get('theme') || 'classic');
+  $('#themes').addEventListener('click', e => {
+    const b = e.target.closest('[data-theme]'); if (!b) return;
+    const n = applyTheme(b.dataset.theme); store.set('theme', n); toast('المظهر: ' + THEMES[n][0]);
+  });
   $('#btnPdf').onclick = openPdfSheet;
-  $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings'); };
+  $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; $('#optSmart').checked = state.smart; updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings'); };
   $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); applyScanBtn(); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
+  $('#optSmart').addEventListener('change', e => { state.smart = e.target.checked; store.set('smart', state.smart ? '1' : '0'); if (state.view === 'all') apply(false); toast(state.smart ? 'البحث الذكي مفعّل' : 'البحث الذكي متوقف'); });
   $('#btnRefresh').onclick = () => refresh(true);
   $('#btnDlThumbs').onclick = () => downloadImages('thumbs');
   $('#btnDlFull').onclick = () => downloadImages('full');

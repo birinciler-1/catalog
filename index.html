@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="الكتالوج">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')||'classic'}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
@@ -43,7 +44,7 @@
       <option value="company">حسب الشركة</option>
       <option value="name">حسب الاسم</option>
     </select>
-    <label class="mini-switch"><input type="checkbox" id="inStock"><span>المتوفر فقط</span></label>
+    <label class="mini-switch"><input type="checkbox" id="inStock" checked><span>المتوفر فقط</span></label>
   </div>
 </header>
 
@@ -129,6 +130,21 @@
       <span><b>وضع عرض الزبون</b><small>يُخفي سعر الكارتون والكمية والباركود من الشاشة والصور والـ PDF</small></span>
       <input type="checkbox" id="optCustomer">
     </label>
+
+    <label class="row-switch" style="margin-top:10px">
+      <span><b>البحث الذكي</b><small>يتجاهل «ال» والحروف المكررة ويتحمل الأخطاء الإملائية البسيطة. عند إيقافه يكون البحث حرفياً فقط</small></span>
+      <input type="checkbox" id="optSmart" checked>
+    </label>
+
+    <section>
+      <h4>المظهر</h4>
+      <div class="themes" id="themes">
+        <button type="button" data-theme="classic" class="on"><i class="sw" style="--a:#f2efeb;--b:#fff;--c:#c25e27"></i><span>الحالي</span></button>
+        <button type="button" data-theme="dark"><i class="sw" style="--a:#151413;--b:#2a2724;--c:#e0884a"></i><span>داكن</span></button>
+        <button type="button" data-theme="sage"><i class="sw" style="--a:#eef2ec;--b:#fbfdfa;--c:#3f7d5c"></i><span>أخضر هادئ</span></button>
+        <button type="button" data-theme="ocean"><i class="sw" style="--a:#eaf0f5;--b:#fafcfe;--c:#2f6f9f"></i><span>أزرق بحري</span></button>
+      </div>
+    </section>
 
     <section>
       <h4>المواد المزالة</h4>
