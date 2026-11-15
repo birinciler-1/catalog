@@ -3,7 +3,7 @@
    - data/products.json (الأسعار): الشبكة أولاً، وإن لم يوجد إنترنت تُعرض آخر نسخة محفوظة
    - الصور: تُحفظ عند أول عرض وتبقى (تتبقى بين التحديثات)
    غيّر VERSION عند تعديل ملفات التطبيق نفسها لإجبار التحديث. */
-const VERSION = '2026-11-14.2';
+const VERSION = '2026-11-15.1';
 const SHELL_CACHE = 'shell-' + VERSION;
 const IMG_CACHE = 'images-v1';
 const DATA_CACHE = 'data-v1';
@@ -41,7 +41,7 @@ self.addEventListener('fetch', e => {
   if (url.hostname === 'unpkg.com' && url.pathname.includes('html5-qrcode')) return e.respondWith(libFirst(req));
   if (url.origin !== location.origin) return;
 
-  if (url.pathname.endsWith('/data/products.json')) {
+  if (url.pathname.endsWith('/data/products.json') || url.pathname.endsWith('/data/debts.xlsx')) {
     e.respondWith(networkFirst(req, DATA_CACHE, 15000));
   } else if (url.pathname.includes('/images/')) {
     e.respondWith(cacheFirst(req, IMG_CACHE));

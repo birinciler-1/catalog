@@ -49,6 +49,9 @@
       <option value="code">حسب الكود</option>
       <option value="priceAsc">الأرخص أولاً</option>
       <option value="priceDesc">الأغلى أولاً</option>
+      <option value="stockDesc">الباقي: الأكثر أولاً</option>
+      <option value="stockAsc">الباقي: الأقل أولاً</option>
+      <option value="inFirst">المتوفر أولاً</option>
       <option value="company">حسب الشركة</option>
       <option value="name">حسب الاسم</option>
     </select>
@@ -182,6 +185,12 @@
       </div>
     </section>
 
+    <section id="secDebts">
+      <h4>ديون الزبائن</h4>
+      <p class="hint">قائمة الزبائن المدينين من ملف إكسل. للخصوصية يُفضَّل استيراد الملف من جهازك بدل رفعه على الموقع، لأن أي ملف على الموقع يستطيع تحميله من يعرف رابطه.</p>
+      <button class="btn" id="btnDebts" type="button">💳 ديون الزبائن</button>
+    </section>
+
     <section>
       <h4>المواد المزالة</h4>
       <p class="hint">مواد أزلتها من الكتالوج (من زر الإزالة داخل بطاقة المادة) وتبقى محفوظة هنا وتستطيع إرجاعها.</p>
@@ -272,6 +281,33 @@
     <div class="sl-row"><span class="sl-code" id="slCode"></span><span class="sl-price" id="slPrice"></span></div>
   </div>
   <div class="sl-bar"><i id="slBar"></i></div>
+</div>
+
+<!-- ديون الزبائن -->
+<div id="debtSheet" class="overlay" hidden role="dialog" aria-modal="true">
+  <div class="panel sheet">
+    <div class="sheet-head"><h3>ديون الزبائن</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
+    <div class="dsum">
+      <div><small>إجمالي الديون</small><b id="debtTotal">0</b></div>
+      <div><small>عدد الزبائن</small><b id="debtCount">0</b></div>
+    </div>
+    <div class="dctl">
+      <input id="debtQ" class="textin" type="search" autocomplete="off" placeholder="ابحث باسم الزبون…">
+      <select id="debtSort" aria-label="ترتيب الديون">
+        <option value="amount">الأكبر ديناً</option>
+        <option value="pay">الأقدم قبضاً</option>
+        <option value="inv">الأحدث قائمة</option>
+        <option value="name">حسب الاسم</option>
+      </select>
+    </div>
+    <div id="debtList"></div>
+    <p class="hint" id="debtInfo"></p>
+    <div class="btnrow">
+      <button class="btn" id="debtRefresh" type="button">تحديث من الموقع</button>
+      <button class="btn" id="debtImport" type="button">استيراد ملف إكسل</button>
+    </div>
+    <input id="debtFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  </div>
 </div>
 
 <!-- المواد المزالة -->

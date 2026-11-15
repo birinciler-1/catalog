@@ -414,3 +414,23 @@ body.split-on #toast{left:calc(50% + var(--pane)/2)}
 .sl-bar{height:5px;background:rgba(255,255,255,.18);border-radius:3px;margin-top:14px;overflow:hidden}
 .sl-bar i{display:block;height:100%;width:0;background:var(--o);border-radius:3px}
 @keyframes slbar{from{width:0}to{width:100%}}
+
+/* ديون الزبائن */
+.dsum{display:grid;grid-template-columns:1.6fr 1fr;gap:10px;margin:6px 0 12px}
+.dsum>div{background:var(--o);color:var(--on-o);border-radius:14px;padding:10px 14px;display:flex;flex-direction:column}
+.dsum>div:last-child{background:var(--soft2);color:var(--ink)}
+.dsum small{font-size:13px;opacity:.85}
+.dsum b{font-size:22px;direction:ltr;text-align:start}
+.dctl{display:flex;gap:8px;margin-bottom:8px}
+.dctl .textin{flex:1;min-width:0;height:46px}
+.dctl select{height:46px;max-width:140px}
+.debt{background:var(--field);border-radius:14px;padding:12px 14px;margin:8px 0;border-inline-start:6px solid #2e7d32}
+.debt.late{border-inline-start-color:#b3261e}
+.d-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.d-name{font-size:17px;line-height:1.35}
+.d-amt{font-weight:900;font-size:19px;color:var(--dng);direction:ltr;white-space:nowrap}
+.d-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:14.5px}
+.d-grid span{color:var(--mut)}
+.d-grid b{font-weight:600}
+.d-grid small{color:var(--mut);font-weight:400;margin-inline-start:4px}
+.d-late{margin-top:8px;font-size:13.5px;font-weight:700;color:var(--dng)}

@@ -10,6 +10,7 @@
   /* ═══════════ إعدادات يمكنك تغييرها من هنا ═══════════ */
   const SETTINGS_CODE = '1234';        // رمز دخول الإعدادات (يُطلب في كل مرة). غيّره كما تشاء، أو اتركه فارغاً '' لإلغاء الرمز
   const COMPANY_NAME = 'BİRİNCİLER';   // اسم الشركة على غلاف ملف PDF وشريط صفحاته (بدون اسم المندوب)
+  const DEBT_LATE_DAYS = 30;           // الزبون الذي مضى على آخر قبض منه أكثر من هذا العدد من الأيام يظهر «متأخراً» في قائمة الديون
   /* ═══════════════════════════════════════════════════ */
 
   const store = {
@@ -289,6 +290,9 @@
         code: (x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }),
         priceAsc: (x, y) => x.price - y.price,
         priceDesc: (x, y) => y.price - x.price,
+        stockDesc: (x, y) => y.stock - x.stock,
+        stockAsc: (x, y) => x.stock - y.stock,
+        inFirst: (x, y) => (y.stock > 0) - (x.stock > 0),
         company: (x, y) => cx[x.company] - cx[y.company],
         name: (x, y) => col.compare(x.name, y.name)
       }[state.sort];
@@ -404,7 +408,7 @@
 
   /* عرض بنافذتين: على الشاشات العريضة (آيباد/لابتوب) تظهر التفاصيل بجانب القائمة بدل نافذة تغطي الصفحة */
   const splitOn = () => F('split') && window.innerWidth >= 800;
-  const anySheetOpen = () => ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'scanOvl', 'slideOvl'].some(id => !$('#' + id).hidden);
+  const anySheetOpen = () => ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet', 'scanOvl', 'slideOvl'].some(id => !$('#' + id).hidden);
   function syncDetailMode() {
     const split = splitOn(), open = !$('#detail').hidden, b = document.body.classList;
     b.toggle('split-on', split);
@@ -1023,7 +1027,7 @@
 
   function openSheet(id) { $('#' + id).hidden = false; document.body.classList.add('lock'); }
   function closeSheets() {
-    ['pdfSheet', 'settings', 'removedSheet', 'priceSheet'].forEach(id => { $('#' + id).hidden = true; });
+    ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet'].forEach(id => { $('#' + id).hidden = true; });
     if ($('#detail').hidden || splitOn()) document.body.classList.remove('lock');
   }
 
@@ -1088,6 +1092,7 @@
   $('#btnSettings').onclick = async () => {
     if (SETTINGS_CODE && !(await askDialog({ title: 'الإعدادات', text: 'أدخل الرمز للدخول', input: true, validate: v => v === codeNorm(SETTINGS_CODE) || 'الرمز غير صحيح' }))) return;
     $('#optCustomer').checked = state.customer; $('#optSmart').checked = state.smart;
+    $('#secDebts').hidden = state.customer;
     renderFeatList(); $('#optSlideSec').value = String(slideSec()); $('#optCoName').value = store.get('coName') || '';
     updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings');
   };
@@ -1447,6 +1452,165 @@
 
   applyFeatures();
   booted = true; tryLink();
+
+
+  /* ═══════════════ ديون الزبائن (من ملف إكسل) ═══════════════
+     الأعمدة بالترتيب: A اسم الزبون | B المبلغ المديون | C تاريخ آخر قائمة | D تاريخ آخر قبض | E آخر مبلغ مقبوض
+     يُقرأ الملف data/debts.xlsx من الموقع، أو يُستورد من الجهاز (فيبقى خاصاً على الجهاز ولا يُرفع للموقع). */
+  function inflateRaw(src) {                                        // فك ضغط deflate (بدون مكتبات، يعمل على كل المتصفحات)
+    let pos = 0, bb = 0, bc = 0; const out = [];
+    const bits = n => { let v = bb; while (bc < n) { if (pos >= src.length) throw new Error('eof'); v |= src[pos++] << bc; bc += 8; } bb = v >>> n; bc -= n; return v & ((1 << n) - 1); };
+    const build = lens => { const count = new Array(16).fill(0), sym = [], offs = new Array(16).fill(0); lens.forEach(l => count[l]++); for (let i = 1; i < 15; i++) offs[i + 1] = offs[i] + count[i]; lens.forEach((l, k) => { if (l) sym[offs[l]++] = k; }); return { count, sym }; };
+    const dec = h => { let code = 0, first = 0, idx = 0; for (let len = 1; len <= 15; len++) { code |= bits(1); const c = h.count[len]; if (code - c < first) return h.sym[idx + (code - first)]; idx += c; first += c; first <<= 1; code <<= 1; } throw new Error('code'); };
+    const LB = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258], LE = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+    const DB = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577], DE = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+    let fixed = null;
+    const codes = (hl, hd) => {
+      for (;;) {
+        let sy = dec(hl);
+        if (sy < 256) out.push(sy);
+        else if (sy === 256) return;
+        else { sy -= 257; const len = LB[sy] + bits(LE[sy]), ds = dec(hd), dist = DB[ds] + bits(DE[ds]); for (let k = 0; k < len; k++) out.push(out[out.length - dist]); }
+      }
+    };
+    for (let last = 0; !last;) {
+      last = bits(1); const type = bits(2);
+      if (type === 0) {
+        bb = 0; bc = 0; const len = src[pos] | (src[pos + 1] << 8); pos += 4;
+        for (let k = 0; k < len; k++) out.push(src[pos++]);
+      } else if (type === 1) {
+        if (!fixed) { const l = []; for (let k = 0; k < 288; k++) l.push(k < 144 ? 8 : k < 256 ? 9 : k < 280 ? 7 : 8); fixed = [build(l), build(new Array(30).fill(5))]; }
+        codes(fixed[0], fixed[1]);
+      } else if (type === 2) {
+        const nl = bits(5) + 257, nd = bits(5) + 1, nc = bits(4) + 4, ord = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15], cl = new Array(19).fill(0);
+        for (let k = 0; k < nc; k++) cl[ord[k]] = bits(3);
+        const hc = build(cl), lens = [];
+        while (lens.length < nl + nd) {
+          const sy = dec(hc);
+          if (sy < 16) lens.push(sy);
+          else { let rep = 0, v = 0; if (sy === 16) { v = lens[lens.length - 1]; rep = 3 + bits(2); } else if (sy === 17) rep = 3 + bits(3); else rep = 11 + bits(7); while (rep--) lens.push(v); }
+        }
+        codes(build(lens.slice(0, nl)), build(lens.slice(nl)));
+      } else throw new Error('block');
+    }
+    return Uint8Array.from(out);
+  }
+  function zipReader(buf) {                                          // يقرأ ملف zip (xlsx) ويرجع دالة تعيد نص أي ملف داخله
+    const u8 = new Uint8Array(buf), dv = new DataView(buf); let e = u8.length - 22;
+    while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) throw new Error('not-zip');
+    const n = dv.getUint16(e + 10, true), files = {}; let p = dv.getUint32(e + 16, true);
+    for (let i = 0; i < n && dv.getUint32(p, true) === 0x02014b50; i++) {
+      const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cm = dv.getUint16(p + 32, true);
+      files[new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl))] = { m: dv.getUint16(p + 10, true), c: dv.getUint32(p + 20, true), o: dv.getUint32(p + 42, true) };
+      p += 46 + nl + el + cm;
+    }
+    return name => {
+      const f = files[name]; if (!f) return null;
+      const st = f.o + 30 + dv.getUint16(f.o + 26, true) + dv.getUint16(f.o + 28, true), raw = u8.subarray(st, st + f.c);
+      return new TextDecoder().decode(f.m === 0 ? raw : inflateRaw(raw));
+    };
+  }
+  const colIdx = ref => { let n = 0; for (const ch of ref.replace(/[^A-Z]/gi, '').toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  function xlsxRows(buf) {                                           // → مصفوفة صفوف، كل صف مصفوفة خلايا
+    const rd = zipReader(buf), xml = t => new DOMParser().parseFromString(t, 'application/xml');
+    const wb = rd('xl/workbook.xml'); let target = 'xl/worksheets/sheet1.xml';
+    if (wb) {
+      const sh = xml(wb).getElementsByTagName('sheet')[0], rid = sh && (sh.getAttribute('r:id') || sh.getAttribute('id')), rels = rd('xl/_rels/workbook.xml.rels');
+      if (rid && rels) for (const r of xml(rels).getElementsByTagName('Relationship')) if (r.getAttribute('Id') === rid) { const t = r.getAttribute('Target'); target = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.?\//, ''); }
+    }
+    const sheet = rd(target); if (!sheet) throw new Error('no-sheet');
+    const sst = [], sx = rd('xl/sharedStrings.xml');
+    if (sx) for (const si of xml(sx).getElementsByTagName('si')) sst.push([...si.getElementsByTagName('t')].map(t => t.textContent).join(''));
+    const rows = [];
+    for (const row of xml(sheet).getElementsByTagName('row')) {
+      const cells = [];
+      for (const c of row.getElementsByTagName('c')) {
+        const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0], idx = colIdx(c.getAttribute('r') || '');
+        let val = null;
+        if (t === 'inlineStr') val = [...c.getElementsByTagName('t')].map(x => x.textContent).join('');
+        else if (v) val = t === 's' ? (sst[+v.textContent] ?? '') : (t === 'str' || t === 'e') ? v.textContent : t === 'b' ? v.textContent : Number(v.textContent);
+        cells[idx] = val;
+      }
+      rows.push(cells);
+    }
+    return rows;
+  }
+  const isoOf = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  function toIsoDate(v) {
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') { if (!(v > 0)) return ''; const d = new Date(Math.round((v - 25569) * 86400000)); return isoOf(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+    const t = codeNorm(v).replace(/\s+/g, ''); let m;
+    if ((m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return isoOf(+m[1], +m[2], +m[3]);
+    if ((m = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/))) return isoOf(+m[3], +m[2], +m[1]);          // يوم/شهر/سنة
+    return '';
+  }
+  const toAmount = v => typeof v === 'number' ? v : (Number(codeNorm(v || '').replace(/[,٬\sA-Za-z]/g, '')) || 0);
+  function parseDebts(buf) {
+    const rows = xlsxRows(buf), out = [];
+    rows.forEach((r, k) => {
+      if (!r || r[0] === undefined || r[0] === null) return;
+      const name = String(r[0]).trim(); if (!name) return;
+      if (k === 0 && typeof r[1] !== 'number' && !/^[\d٠-٩,.\s]+$/.test(String(r[1] ?? '').trim())) return;     // سطر العناوين
+      const debt = toAmount(r[1]); if (!(debt > 0)) return;                                                     // مبلغ صفر = لا يظهر
+      out.push({ name, debt, inv: toIsoDate(r[2]), pay: toIsoDate(r[3]), paid: toAmount(r[4]) });
+    });
+    return out;
+  }
+  let debts = { rows: [], at: '', src: '' };
+  try { const d = JSON.parse(store.get('debts') || 'null'); if (d && Array.isArray(d.rows)) debts = d; } catch { /* تجاهل */ }
+  const saveDebts = (rows, src) => { debts = { rows, at: new Date().toISOString(), src }; store.set('debts', JSON.stringify(debts)); };
+  async function fetchDebtsFile() {
+    const r = await fetch('data/debts.xlsx', { cache: 'no-store' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    return parseDebts(await r.arrayBuffer());
+  }
+  const dayDiff = iso => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); const t = new Date(); return Math.floor((Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) - Date.UTC(y, m - 1, d)) / 86400000); };
+  const ago = n => n === null ? '' : n < 0 ? '' : n === 0 ? 'اليوم' : n === 1 ? 'أمس' : n === 2 ? 'قبل يومين' : n <= 10 ? `قبل ${n} أيام` : `قبل ${n} يوماً`;
+  const showDate = iso => iso ? iso.split('-').reverse().join('/') : '—';
+  const iqd = n => `${num(n)} IQD`;
+  function renderDebts() {
+    const q = norm($('#debtQ').value), sort = $('#debtSort').value;
+    let list = debts.rows.filter(d => !q || norm(d.name).includes(q));
+    const late = d => { const n = dayDiff(d.pay || d.inv); return n !== null && n > DEBT_LATE_DAYS; };
+    const by = { amount: (a, b) => b.debt - a.debt, name: (a, b) => a.name.localeCompare(b.name, 'ar'), pay: (a, b) => (a.pay || '0') < (b.pay || '0') ? -1 : (a.pay || '0') > (b.pay || '0') ? 1 : 0, inv: (a, b) => (b.inv || '').localeCompare(a.inv || '') }[sort];
+    list = list.slice().sort(by);
+    $('#debtTotal').textContent = iqd(debts.rows.reduce((a, d) => a + d.debt, 0));
+    $('#debtCount').textContent = num(debts.rows.length);
+    $('#debtInfo').textContent = debts.at ? `آخر تحديث: ${new Date(debts.at).toLocaleString('ar-IQ')} — ${debts.src === 'device' ? 'من ملف على جهازك' : 'من الموقع'}` : '';
+    $('#debtList').innerHTML = list.length ? list.map(d => {
+      const ni = dayDiff(d.inv), np = dayDiff(d.pay);
+      return `<div class="debt${late(d) ? ' late' : ''}">
+        <div class="d-top"><b class="d-name">${esc(d.name)}</b><span class="d-amt">${iqd(d.debt)}</span></div>
+        <div class="d-grid">
+          <span>آخر قائمة</span><b>${showDate(d.inv)}${ago(ni) ? ` <small>${ago(ni)}</small>` : ''}</b>
+          <span>آخر قبض</span><b>${showDate(d.pay)}${ago(np) ? ` <small>${ago(np)}</small>` : ''}</b>
+          <span>آخر مبلغ مقبوض</span><b>${d.paid > 0 ? `<bdi dir="ltr">${iqd(d.paid)}</bdi>` : '—'}</b>
+        </div>${late(d) ? `<div class="d-late">⚠ متأخر عن القبض أكثر من ${num(DEBT_LATE_DAYS)} يوماً</div>` : ''}</div>`;
+    }).join('') : `<p class="hint" style="text-align:center;padding:24px 8px">${debts.rows.length ? 'لا توجد نتائج مطابقة' : 'لا توجد بيانات ديون بعد.<br>ضع الملف <b dir="ltr">data/debts.xlsx</b> على الموقع ثم اضغط «تحديث من الموقع»، أو اضغط «استيراد ملف إكسل» واختر الملف من جهازك.'}</p>`;
+  }
+  async function refreshDebts(manual) {
+    try {
+      const rows = await fetchDebtsFile(); saveDebts(rows, 'site'); renderDebts();
+      if (manual) toast(`تم التحديث: ${num(rows.length)} زبون`);
+    } catch (e) {
+      if (manual) toast(String(e.message).startsWith('http') ? 'لم أجد الملف data/debts.xlsx على الموقع' : 'تعذّر قراءة الملف أو لا يوجد اتصال', 3500);
+    }
+  }
+  $('#btnDebts').onclick = () => {
+    $('#debtQ').value = ''; renderDebts(); openSheet('debtSheet');
+    if (!debts.src || debts.src === 'site') refreshDebts(false);        // الملف المستورد من الجهاز لا يُستبدل تلقائياً
+  };
+  $('#debtQ').addEventListener('input', renderDebts);
+  $('#debtSort').addEventListener('change', renderDebts);
+  $('#debtRefresh').onclick = () => refreshDebts(true);
+  $('#debtImport').onclick = () => $('#debtFile').click();
+  $('#debtFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try { const rows = parseDebts(await f.arrayBuffer()); saveDebts(rows, 'device'); renderDebts(); toast(`تم الاستيراد: ${num(rows.length)} زبون`); }
+    catch { toast('تعذّر قراءة الملف — تأكد أنه بصيغة xlsx وبالأعمدة المطلوبة', 4000); }
+  });
+  window.__parseDebts = parseDebts;                                  // للفحص فقط
 
   window.__catalog = { state, apply, norm, stepCols, curCols };     // للفحص والاختبار فقط
 })();
