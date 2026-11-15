@@ -7,6 +7,11 @@
   const ORANGE = '#c25e27';
   const CHUNK = 60;
 
+  /* ═══════════ إعدادات يمكنك تغييرها من هنا ═══════════ */
+  const SETTINGS_CODE = '1234';        // رمز دخول الإعدادات (يُطلب في كل مرة). غيّره كما تشاء، أو اتركه فارغاً '' لإلغاء الرمز
+  const COMPANY_NAME = 'BİRİNCİLER';   // اسم الشركة على غلاف ملف PDF وشريط صفحاته (بدون اسم المندوب)
+  /* ═══════════════════════════════════════════════════ */
+
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* ممتلئ أو غير متاح */ } }
@@ -17,8 +22,31 @@
     q: '', company: '', category: '', view: 'all', sort: store.get('sort') || 'file', inStock: true,
     shown: 0, version: '', updated: '', cur: -1,
     customer: store.get('customer') === '1',
-    smart: store.get('smart') !== '0'
+    smart: store.get('smart') !== '0',
+    favOnly: false, pMin: null, pMax: null,
+    listMode: store.get('viewmode') === 'list'
   };
+
+  /* ميزات إضافية: كل ميزة لها مفتاح تشغيل في الإعدادات */
+  const FEAT_DEFS = [
+    ['fav', 'المختارات ★', 'نجمة على كل مادة وتبويب «المختارات» لقائمتك الخاصة (تُصدَّر PDF أو تُعرض شرائح)'],
+    ['split', 'عرض بنافذتين (آيباد / لابتوب)', 'القائمة بجانب تفاصيل المادة على الشاشات العريضة'],
+    ['list', 'عرض القائمة المضغوطة', 'زر للتبديل بين البطاقات وصفوف مضغوطة'],
+    ['slide', 'عرض الشرائح (Slideshow)', 'عرض المواد بالتتابع بملء الشاشة'],
+    ['price', 'فلتر نطاق السعر', 'زر «السعر» لعرض المواد ضمن نطاق سعر محدد'],
+    ['cover', 'غلاف وفهرس لملف PDF', 'يضيف غلافاً باسم الشركة وفهرساً بالشركات أو الأقسام'],
+    ['link', 'رابط مباشر للمادة', 'زر «رابط» داخل تفاصيل المادة لمشاركتها'],
+    ['table', 'قائمة أسعار جدولية (PDF)', 'خيار جدول أسعار بدون صور في تصدير PDF']
+  ];
+  const feat = {}; FEAT_DEFS.forEach(d => { feat[d[0]] = true; });
+  try { Object.assign(feat, JSON.parse(store.get('feat') || '{}')); } catch { /* تجاهل */ }
+  const F = k => !!feat[k];
+  let favs = new Set();
+  try { favs = new Set(JSON.parse(store.get('favs') || '[]')); } catch { /* تجاهل */ }
+  const sl = { list: [], i: 0, playing: true, open: false, tok: 0, wl: null };      // عرض الشرائح
+  let pendingLink = null, booted = false, favDirty = false;
+  try { pendingLink = new URLSearchParams(location.search).get('p'); } catch { /* تجاهل */ }
+  document.body.classList.toggle('feat-fav', F('fav'));
 
   /* ───────────── أدوات عامة ───────────── */
   const ICONS = {
@@ -31,6 +59,12 @@
     grid: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>',
     building: '<svg viewBox="0 0 24 24"><path d="M5 21V5l9-2v18"/><path d="M14 9h5v12"/><path d="M9 8h1M9 12h1M9 16h1M17 13h.01M17 17h.01"/></svg>',
     chevR: '<svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+    star: '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.7 5.5 6 .9-4.4 4.2 1 6-5.3-2.8-5.3 2.8 1-6L3.3 9.9l6-.9z"/></svg>',
+    list: '<svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg>',
+    tag: '<svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/></svg>',
+    link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+    stock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></svg>',
     scan: '<svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>'
   };
   document.querySelectorAll('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', ICONS[el.dataset.icon] || ''));
@@ -153,6 +187,7 @@
     if (state.company && !state.companies.includes(state.company)) state.company = '';
     if (state.view === 'companies') buildCompanies(); else apply(false);
     updateDataInfo(); updateRemovedCount();
+    tryLink();
   }
 
   async function refresh(manual) {
@@ -173,13 +208,35 @@
   /* ───────────── البحث والفلترة ───────────── */
   /* التبويب الأول: كل المواد | التبويب الثاني: الشركات */
   function setView(v) {
+    state.favOnly = v === 'favs'; if (state.favOnly) v = 'all';
     state.view = v;
-    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    const tab = state.favOnly ? 'favs' : v;
+    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.view === tab));
     const co = v === 'companies';
     $('#coGrid').hidden = !co; $('#grid').hidden = co; $('#meta').hidden = co; $('#sentinel').hidden = co;
     if (co) { $('#cobar').hidden = true; $('#chips').hidden = true; $('#empty').hidden = true; buildCompanies(); }
     else apply();
+    updToolsUi();
     window.scrollTo(0, 0);
+  }
+
+  /* شريط الأدوات (السعر / قائمة / شرائح) وشريط المختارات */
+  function priceLabel() {
+    const a = state.pMin, b = state.pMax;
+    return a != null && b != null ? `${num(a)} – ${num(b)}` : a != null ? `من ${num(a)}` : `حتى ${num(b)}`;
+  }
+  function updToolsUi() {
+    const co = state.view === 'companies';
+    $('#btnPrice').hidden = !F('price'); $('#btnView').hidden = !F('list'); $('#btnSlide').hidden = !F('slide') || state.favOnly;
+    $('#tools').hidden = co || !(F('price') || F('list') || F('slide'));
+    const pa = state.pMin != null || state.pMax != null;
+    $('#btnPrice').classList.toggle('on', pa);
+    $('#priceLbl').textContent = pa ? priceLabel() : 'السعر';
+    $('#favbar').hidden = co || !state.favOnly || !F('fav');
+    $('#favSlide').hidden = !F('slide');
+    $('#favCount').textContent = `${num(state.list.length)} مختارة`;
+    const n = state.items.reduce((a, i) => a + (favs.has(i.code) ? 1 : 0), 0);
+    $('#favN').textContent = n ? String(n) : ''; $('#favN').hidden = !n;
   }
 
   function buildCompanies() {
@@ -216,7 +273,10 @@
     const pool = state.items.filter(it =>
       (!state.company || it.company === state.company) &&
       (!state.category || it.category === state.category) &&
-      (!state.inStock || it.stock > 0));
+      (!state.inStock || it.stock > 0) &&
+      (!state.favOnly || favs.has(it.code)) &&
+      (state.pMin == null || it.price >= state.pMin) &&
+      (state.pMax == null || it.price <= state.pMax));
     const rk = new Map();                       // رتبة كل نتيجة في البحث الذكي
     let r = pool;
     if (toks.length) {
@@ -245,9 +305,10 @@
     $('#count').textContent = approx
       ? (approx === r.length ? `${num(r.length)} نتيجة قريبة من بحثك` : `${num(r.length)} مادة · ${num(approx)} قريبة`)
       : `${num(r.length)} مادة`;
+    updToolsUi();
     const g = $('#grid'); g.innerHTML = ''; state.shown = 0;
     $('#empty').hidden = r.length > 0 || !state.items.length;
-    if (!r.length && state.items.length) showEmpty('لا توجد نتائج مطابقة');
+    if (!r.length && state.items.length) showEmpty(state.favOnly && !favs.size && !state.q ? 'لا توجد مواد مختارة بعد.\nاضغط النجمة ★ على أي مادة لإضافتها هنا.' : 'لا توجد نتائج مطابقة');
     renderMore();
     if (resetScroll) window.scrollTo(0, 0);
   }
@@ -258,11 +319,12 @@
     const t = imgPath(it, 'thumbs');
     const im = t ? `<img src="${t}" loading="lazy" decoding="async" alt="">` : `<div class="ph">${esc(it.code)}</div>`;
     const badge = it.stock <= 0 ? '<span class="outb">غير متوفر</span>' : '';
+    const star = `<span class="fstar${favs.has(it.code) ? ' on' : ''}" data-fav="${esc(it.code)}" role="button" aria-label="مختارات">${ICONS.star}</span>`;
     const pk = (!state.customer && it.pack > 0) ? `<span class="half pk"><small>التعبئة</small><b>${num(it.pack)}</b></span>` : '';
     const st = (!state.customer && it.stock > 0) ? `<span class="half st${it.stock <= 10 ? ' low' : ''}"><small>الباقي</small><b>${num(it.stock)}</b></span>` : '';
     const info = (pk || st) ? `<div class="cinfo">${pk}${st}</div>` : '';
     const price = it.price > 0 ? `<span class="cprice">${num(it.price)}<i> IQD</i></span>` : '<span class="cprice">—</span>';
-    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}${badge}</div>` +
+    return `<button class="card" type="button" style="--co:${coColor(it.company)};--t:${textOn(coColor(it.company))}" data-i="${i}"><div class="cimg">${im}${badge}${star}</div>` +
       `<div class="cname">${esc(it.name)}</div><div class="cfoot"><span class="ccode">${esc(it.code)}</span>${price}</div>${info}</button>`;
   }
 
@@ -288,8 +350,17 @@
   }, true);
   $('#grid').addEventListener('click', e => {
     if (Date.now() - lastPinch < 450) return;          // لا تفتح بطاقة بالخطأ بعد التقريب بإصبعين
+    const sb = e.target.closest('[data-fav]');
+    if (sb) { e.stopPropagation(); const code = sb.dataset.fav; toggleFav(code); sb.classList.toggle('on', favs.has(code)); if (state.favOnly) apply(false); return; }
     const c = e.target.closest('.card'); if (c) openDetail(+c.dataset.i);
   });
+  function toggleFav(code) {
+    if (favs.has(code)) favs.delete(code); else favs.add(code);
+    store.set('favs', JSON.stringify([...favs]));
+    updToolsUi();
+    const cur = state.list[state.cur];
+    if (cur && cur.code === code && !$('#detail').hidden) { $('#dFav').classList.toggle('on', favs.has(code)); if (state.favOnly) favDirty = true; }
+  }
 
   /* ───────────── تفاصيل المنتج ───────────── */
   let detailToken = 0;
@@ -324,13 +395,29 @@
     $('#dNext').hidden = i >= state.list.length - 1;
     $('#dPos').textContent = `${i + 1} / ${state.list.length}`;
     $('#detail .panel').scrollTop = 0;
+    $('#dFav').classList.toggle('on', favs.has(it.code));
+    const gr = $('#grid'), old = gr.querySelector('.card.sel'); if (old) old.classList.remove('sel');
+    const cd = gr.querySelector(`.card[data-i="${i}"]`);
+    if (cd) { cd.classList.add('sel'); if (document.body.classList.contains('pane-open')) cd.scrollIntoView({ block: 'nearest' }); }
     scheduleShareRender(it);
   }
 
+  /* عرض بنافذتين: على الشاشات العريضة (آيباد/لابتوب) تظهر التفاصيل بجانب القائمة بدل نافذة تغطي الصفحة */
+  const splitOn = () => F('split') && window.innerWidth >= 800;
+  const anySheetOpen = () => ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'scanOvl', 'slideOvl'].some(id => !$('#' + id).hidden);
+  function syncDetailMode() {
+    const split = splitOn(), open = !$('#detail').hidden, b = document.body.classList;
+    b.toggle('split-on', split);
+    b.toggle('pane-open', split && open);
+    if (open) { if (!split) b.add('lock'); else if (!anySheetOpen()) b.remove('lock'); }
+    relayout();
+  }
   function openDetail(i) {
     const was = !$('#detail').hidden;
     showDetail(i);
-    $('#detail').hidden = false; document.body.classList.add('lock');
+    $('#detail').hidden = false;
+    if (!splitOn()) document.body.classList.add('lock');
+    syncDetailMode();
     if (!was) history.pushState({ o: 'detail' }, '');
   }
   /* ───────────── إزالة مادة من الكتالوج وإرجاعها ───────────── */
@@ -371,10 +458,17 @@
 
   function closeDetail(viaPop) {
     resetRmBtn();
-    $('#detail').hidden = true; document.body.classList.remove('lock');
+    $('#detail').hidden = true; document.body.classList.remove('lock', 'pane-open');
+    const old = $('#grid').querySelector('.card.sel'); if (old) old.classList.remove('sel');
     if (!viaPop && history.state && history.state.o === 'detail') history.back();
+    relayout();
+    if (favDirty) { favDirty = false; if (state.favOnly) apply(false); }
   }
-  window.addEventListener('popstate', () => { if (!$('#detail').hidden) closeDetail(true); });
+  window.addEventListener('popstate', () => {
+    if (sl.popGuard) { sl.popGuard = false; return; }
+    if (sl.open) { closeSlide(true); return; }
+    if (!$('#detail').hidden) closeDetail(true);
+  });
   $('#dPrev').onclick = () => showDetail(state.cur - 1);
   $('#dNext').onclick = () => showDetail(state.cur + 1);
   let tx = null;
@@ -502,17 +596,19 @@
 
   /* ───────────── تصدير PDF ───────────── */
   const LAYOUTS = { 12: [3, 4], 6: [2, 3], 4: [2, 2], 1: [1, 1] };      // [أعمدة, صفوف]
+  const TABLE_ROWS = 28;                                                  // صفوف الصفحة في القائمة الجدولية
+  const perPage = l => l === 'table' ? TABLE_ROWS : LAYOUTS[l][0] * LAYOUTS[l][1];
   let pdfBlob = null, pdfCancel = false, pdfName = 'catalog.pdf';
 
   function pdfScopeItems() {
     const v = $('#pdfScope').value;
-    let base = v === 'current' ? state.list : v === 'all' ? state.items : state.items.filter(i => i.company === v.slice(3));
+    let base = v === 'current' ? state.list : v === 'all' ? state.items : v === 'favs' ? state.items.filter(i => favs.has(i.code)) : state.items.filter(i => i.company === v.slice(3));
     if ($('#pdfStock').checked) base = base.filter(i => i.stock > 0);
     return base;
   }
   function pdfScopeTitle() {
     const v = $('#pdfScope').value;
-    return v === 'all' ? 'كل المنتجات' : v === 'current' ? (state.company || 'المنتجات المعروضة') : v.slice(3);
+    return v === 'favs' ? 'المختارات' : v === 'all' ? 'كل المنتجات' : v === 'current' ? (state.company || 'المنتجات المعروضة') : v.slice(3);
   }
   // كل صفحة تخص شركة واحدة (ليكون شريط الصفحة بلون واسم الشركة الصحيح)
   function pdfPages(items, per) {
@@ -529,15 +625,21 @@
     return f;
   }
   function updatePdfInfo() {
-    const items = pdfScopeItems(), per = +$('#pdfLayout').value;
-    const pages = pdfPages(items, per).length;
-    $('#pdfInfo').textContent = `${num(items.length)} مادة — ${num(pages)} صفحة`;
+    const items = pdfScopeItems(), per = perPage($('#pdfLayout').value);
+    const pages = pdfPages(items, per).length, cv = F('cover') && $('#pdfCover').checked;
+    $('#pdfInfo').textContent = `${num(items.length)} مادة — ${num(pages)} صفحة` + (cv ? ' + غلاف وفهرس' : '');
     $('#pdfStart').disabled = !items.length;
   }
-  function openPdfSheet() {
+  const tableOpt = $('#pdfLayout option[value="table"]');
+  function openPdfSheet(preset) {
     const sel = $('#pdfScope');
     sel.innerHTML = `<option value="current">المعروض حالياً (${num(state.list.length)})</option><option value="all">كل المواد (${num(state.items.length)})</option>` +
+      (F('fav') && favs.size ? `<option value="favs">★ المختارات (${num(state.items.filter(i => favs.has(i.code)).length)})</option>` : '') +
       state.companies.map(c => `<option value="co:${esc(c)}">شركة: ${esc(c)}</option>`).join('');
+    if (typeof preset === 'string' && [...sel.options].some(o => o.value === preset)) sel.value = preset;
+    const lay = $('#pdfLayout');
+    if (F('table')) { if (!tableOpt.parentNode) lay.appendChild(tableOpt); } else { tableOpt.remove(); if (lay.value === 'table' || !lay.value) lay.value = '6'; }
+    $('#pdfCoverRow').hidden = !F('cover'); $('#pdfCover').checked = store.get('pdfCover') !== '0';
     $('#pdfStock').checked = state.inStock;
     let saved = {}; try { saved = JSON.parse(store.get('pdfFields') || '{}'); } catch { /* تجاهل */ }
     Object.keys(PDF_FIELD_IDS).forEach(k => { $('#' + PDF_FIELD_IDS[k]).checked = k in saved ? !!saved[k] : k !== 'carton'; });
@@ -545,6 +647,7 @@
     $('#pdfDone').hidden = true; $('#pdfProg').hidden = true; $('#pdfText').textContent = '';
     updatePdfInfo(); openSheet('pdfSheet');
   }
+  $('#pdfCover').addEventListener('change', e => { store.set('pdfCover', e.target.checked ? '1' : '0'); updatePdfInfo(); });
   ['pdfScope', 'pdfLayout', 'pdfStock'].forEach(id => $('#' + id).addEventListener('change', updatePdfInfo));
   Object.values(PDF_FIELD_IDS).forEach(id => $('#' + id).addEventListener('change', () => {
     const f = {}; Object.keys(PDF_FIELD_IDS).forEach(k => { f[k] = $('#' + PDF_FIELD_IDS[k]).checked; }); store.set('pdfFields', JSON.stringify(f));
@@ -678,12 +781,125 @@
     else { g.fillStyle = '#c9c2b8'; g.font = `bold ${u(34)}px ${FONT}`; g.direction = 'ltr'; g.fillText(String(it.code), bx + bw / 2, iy + ih / 2); g.direction = 'rtl'; }
   }
 
+  /* ───── غلاف وفهرس وقائمة جدولية ───── */
+  const IDX_ROWS = 16;
+  function fitText(g, text, maxW, size, weight = 'bold', min = 15) {     // يصغّر الخط ثم يقصّ بنقاط عند الحاجة
+    text = String(text); let z = size; g.font = `${weight} ${z}px ${FONT}`;
+    while (z > min && g.measureText(text).width > maxW) { z -= 1; g.font = `${weight} ${z}px ${FONT}`; }
+    if (g.measureText(text).width > maxW) { while (text.length > 1 && g.measureText(text + '…').width > maxW) text = text.slice(0, -1); text += '…'; }
+    return text;
+  }
+  function pdfIndexEntries(pgs, items) {                  // فهرس بالشركات، أو بالأقسام إن كانت شركة واحدة
+    const cos = [...new Set(items.map(i => i.company || ''))];
+    let by;
+    if (cos.length > 1) by = it => it.company || '';
+    else { const cats = new Set(items.map(i => i.category || '').filter(Boolean)); if (cats.size < 2) return []; by = it => it.category || ''; }
+    const map = new Map();
+    items.forEach(it => { const k = by(it); if (k) map.set(k, (map.get(k) || 0) + 1); });
+    const out = [];
+    map.forEach((count, k) => out.push({ label: k, count, p: pgs.findIndex(pg => pg.items.some(it => by(it) === k)), color: coColor(cos.length > 1 ? k : cos[0]) }));
+    return out;
+  }
+  function pdfHeader(g, W, color, title, brand) {
+    g.fillStyle = color; g.fillRect(0, 0, W, 104);
+    g.fillStyle = textOn(color); g.textBaseline = 'middle';
+    g.textAlign = 'right'; g.direction = 'rtl'; g.font = `bold 46px ${FONT}`; g.fillText(title, W - 40, 54);
+    g.textAlign = 'left'; g.direction = 'ltr'; g.font = `bold 36px ${FONT}`; g.fillText(brand, 40, 54);
+    g.direction = 'rtl';
+  }
+  function pdfFooter(g, W, H, p, total, today) {
+    g.fillStyle = '#9a938a'; g.font = `22px ${FONT}`; g.textAlign = 'center'; g.direction = 'ltr'; g.textBaseline = 'middle';
+    g.fillText(`${p + 1} / ${total}`, W / 2, H - 34);
+    g.textAlign = 'left'; g.fillText(today, 40, H - 34); g.textAlign = 'center'; g.direction = 'rtl';
+  }
+  function drawCover(g, W, H, opt, count, logo, today) {          // اسم الشركة فقط، بلا اسم المندوب
+    const accent = opt.accent, fg = textOn(accent);
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = accent; g.fillRect(0, 0, W, 600);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    let ny = 300;
+    if (logo) { drawContain(g, logo, (W - 420) / 2, 90, 420, 190); ny = 410; }
+    g.fillStyle = fg; g.direction = /[A-Za-z]/.test(opt.coName) ? 'ltr' : 'rtl';
+    g.fillText(fitText(g, opt.coName, W - 160, 120), W / 2, ny);
+    g.direction = 'rtl'; g.fillStyle = '#1f1d1b';
+    g.fillText(fitText(g, opt.title, W - 160, 76), W / 2, 800);
+    g.fillStyle = '#7a736a'; g.font = `600 42px ${FONT}`;
+    g.fillText(opt.layout === 'table' ? 'قائمة الأسعار' : 'كتالوج المنتجات', W / 2, 890);
+    g.fillStyle = accent; g.fillRect(W / 2 - 90, 950, 180, 8);
+    g.fillStyle = '#1f1d1b'; g.font = `bold 48px ${FONT}`; g.fillText(`${num(count)} مادة`, W / 2, 1040);
+    g.fillStyle = '#9a938a'; g.font = `36px ${FONT}`; g.direction = 'ltr'; g.fillText(today, W / 2, 1110); g.direction = 'rtl';
+  }
+  function drawIndex(g, W, H, opt, rows) {
+    g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+    pdfHeader(g, W, opt.accent, 'الفهرس', opt.coName);
+    const top = 150, rh = 72;
+    rows.forEach((e, k) => {
+      const y = top + k * rh;
+      g.strokeStyle = '#e8e3dc'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(40, y + rh); g.lineTo(W - 40, y + rh); g.stroke();
+      g.fillStyle = e.color; rr(g, W - 54, y + 16, 14, rh - 32, 5); g.fill();
+      g.textBaseline = 'middle'; g.fillStyle = '#1f1d1b'; g.textAlign = 'right'; g.direction = 'rtl';
+      g.fillText(fitText(g, e.label, 560, 34), W - 76, y + rh / 2 + 1);
+      g.fillStyle = '#8a837a'; g.font = `26px ${FONT}`; g.textAlign = 'center'; g.fillText(`${num(e.count)} مادة`, 330, y + rh / 2 + 1);
+      g.fillStyle = '#1f1d1b'; g.font = `bold 36px ${FONT}`; g.textAlign = 'left'; g.direction = 'ltr'; g.fillText(String(e.page), 60, y + rh / 2 + 1);
+      g.direction = 'rtl';
+    });
+  }
+  function drawTablePage(g, W, slice, color, f) {
+    const fg = textOn(color), x0 = 40, x1 = W - 40, tw = x1 - x0, ink = '#1f1d1b', RH = 44, y0 = 124, HH = 52;
+    const defs = [{ k: 'code', l: 'الكود', w: 124 }, { k: 'name', l: 'اسم المادة', w: 0 }];
+    if (f.price) defs.push({ k: 'price', l: 'السعر', w: 150 });
+    if (f.carton) defs.push({ k: 'carton', l: 'سعر الكارتون', w: 160 });
+    if (f.pack) defs.push({ k: 'pack', l: 'التعبئة', w: 96 });
+    if (f.stock) defs.push({ k: 'stock', l: 'الباقي', w: 116 });
+    if (f.barcode) defs.push({ k: 'barcode', l: 'الباركود', w: 200 });
+    const nameCol = defs[1]; nameCol.w = Math.max(240, tw - defs.reduce((a, d) => a + d.w, 0));
+    const tot = defs.reduce((a, d) => a + d.w, 0), sc = tot > tw ? tw / tot : 1;
+    let xr = x1; defs.forEach(d => { d.w *= sc; d.xr = xr; xr -= d.w; });
+    g.fillStyle = color; g.fillRect(x0, y0, tw, HH);
+    g.fillStyle = fg; g.textBaseline = 'middle'; g.font = `bold 24px ${FONT}`; g.direction = 'rtl';
+    defs.forEach(d => { if (d.k === 'name') { g.textAlign = 'right'; g.fillText(d.l, d.xr - 12, y0 + HH / 2 + 1); } else { g.textAlign = 'center'; g.fillText(d.l, d.xr - d.w / 2, y0 + HH / 2 + 1); } });
+    slice.forEach((it, n) => {
+      const y = y0 + HH + n * RH, ym = y + RH / 2 + 1;
+      if (n % 2 === 0) { g.fillStyle = '#f6f4f1'; g.fillRect(x0, y, tw, RH); }
+      g.strokeStyle = '#e6e1d9'; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, y + RH); g.lineTo(x1, y + RH); g.stroke();
+      defs.forEach(d => {
+        const cx = d.xr - d.w / 2; g.fillStyle = ink;
+        if (d.k === 'name') { g.textAlign = 'right'; g.direction = 'rtl'; g.fillText(fitText(g, it.name, d.w - 24, 24, '600', 15), d.xr - 12, ym); return; }
+        g.textAlign = 'center'; g.direction = 'ltr';
+        if (d.k === 'code') g.fillText(fitText(g, it.code, d.w - 12, 24, 'bold'), cx, ym);
+        else if (d.k === 'price') g.fillText(fitText(g, fmt(it.price), d.w - 12, 25, 'bold'), cx, ym);
+        else if (d.k === 'carton') g.fillText(fitText(g, fmt(it.carton), d.w - 12, 22, '600'), cx, ym);
+        else if (d.k === 'pack') g.fillText(fitText(g, it.pack > 0 ? num(it.pack) : '—', d.w - 8, 23, '600'), cx, ym);
+        else if (d.k === 'barcode') g.fillText(fitText(g, it.barcode ? String(it.barcode) : '—', d.w - 12, 21, '600'), cx, ym);
+        else if (d.k === 'stock') {
+          if (it.stock > 0) { g.fillStyle = it.stock <= 10 ? '#b45309' : ink; g.fillText(num(it.stock), cx, ym); }
+          else { g.direction = 'rtl'; g.fillStyle = '#b3261e'; g.fillText(fitText(g, 'غير متوفر', d.w - 8, 19, 'bold'), cx, ym); }
+        }
+      });
+      g.direction = 'rtl';
+    });
+  }
+
   async function buildPdf(items, opt, onProgress) {
-    const W = 1050, H = 1485, [cols, rows] = LAYOUTS[opt.layout], per = cols * rows;
-    const pgs = pdfPages(items, per), pages = pgs.length;
+    const W = 1050, H = 1485, table = opt.layout === 'table', per = perPage(opt.layout);
+    const cols = table ? 1 : LAYOUTS[opt.layout][0];
+    const pgs = pdfPages(items, per);
+    const cos = [...new Set(items.map(i => i.company || ''))];
+    opt.accent = cos.length === 1 && cos[0] ? coColor(cos[0]) : ORANGE;
+    opt.coName = opt.coName || COMPANY_NAME;
+    const plan = [];
+    if (opt.cover) {
+      const ent = pdfIndexEntries(pgs, items), nIdx = Math.ceil(ent.length / IDX_ROWS), front = 1 + nIdx;
+      ent.forEach(e => { e.page = front + e.p + 1; });
+      plan.push({ kind: 'cover' });
+      for (let k = 0; k < nIdx; k++) plan.push({ kind: 'index', rows: ent.slice(k * IDX_ROWS, (k + 1) * IDX_ROWS) });
+    }
+    pgs.forEach(pg => plan.push({ kind: 'items', pg }));
+    const pages = plan.length;
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d'); g.direction = 'rtl';
     const today = new Date().toISOString().slice(0, 10);
+    const logo = opt.cover ? await getLogo() : null;
     const parts = []; let pos = 0; const offs = {};
     const push = d => { parts.push(d); pos += typeof d === 'string' ? d.length : d.size; };
     const obj = n => { offs[n] = pos; push(`${n} 0 obj\n`); };
@@ -692,28 +908,29 @@
 
     for (let p = 0; p < pages; p++) {
       if (pdfCancel) return null;
-      const slice = pgs[p].items, co = pgs[p].company;
-      const color = co ? coColor(co) : ORANGE, fg = textOn(color);
-      const imgs = await Promise.all(slice.map(it => loadImg(
-        (per >= 6 ? [imgPath(it, 'thumbs')] : [imgPath(it, 'full'), imgPath(it, 'thumbs')]).filter(Boolean))));
-
-      g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
-      // شريط الصفحة بلون الشركة: اسم الشركة يميناً · BİRİNCİLER يساراً
-      g.fillStyle = color; g.fillRect(0, 0, W, 104);
-      g.fillStyle = fg; g.textBaseline = 'middle';
-      g.textAlign = 'right'; g.direction = 'rtl'; g.font = `bold 46px ${FONT}`; g.fillText(co || opt.title, W - 40, 54);
-      g.textAlign = 'left'; g.direction = 'ltr'; g.font = `bold 36px ${FONT}`; g.fillText('BİRİNCİLER', 40, 54);
-      g.direction = 'rtl';
-
-      const mx = 40, gap = 22, top = 128, bottom = H - 70;
-      const cw = (W - 2 * mx - gap * (cols - 1)) / cols, ch = (bottom - top - gap * (rows - 1)) / rows;
-      slice.forEach((it, n) => {
-        const col = n % cols, row = Math.floor(n / cols);
-        drawCell(g, it, imgs[n], W - mx - cw - col * (cw + gap), top + row * (ch + gap), cw, ch, opt.fields, color);
-      });
-      g.fillStyle = '#9a938a'; g.font = `22px ${FONT}`; g.textAlign = 'center'; g.direction = 'ltr';
-      g.fillText(`${p + 1} / ${pages}`, W / 2, H - 34);
-      g.textAlign = 'left'; g.fillText(today, 40, H - 34); g.textAlign = 'center'; g.direction = 'rtl';
+      const pl = plan[p];
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl';
+      if (pl.kind === 'cover') { drawCover(g, W, H, opt, items.length, logo, today); }
+      else if (pl.kind === 'index') { drawIndex(g, W, H, opt, pl.rows); pdfFooter(g, W, H, p, pages, today); }
+      else {
+        const slice = pl.pg.items, co = pl.pg.company;
+        const color = co ? coColor(co) : ORANGE;
+        g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+        pdfHeader(g, W, color, co || opt.title, opt.coName);                     // شريط الصفحة بلون الشركة (كما كان)
+        if (table) drawTablePage(g, W, slice, color, opt.fields);
+        else {
+          const imgs = await Promise.all(slice.map(it => loadImg(
+            (per >= 6 ? [imgPath(it, 'thumbs')] : [imgPath(it, 'full'), imgPath(it, 'thumbs')]).filter(Boolean))));
+          const rows = per / cols;
+          const mx = 40, gap = 22, top = 128, bottom = H - 70;
+          const cw = (W - 2 * mx - gap * (cols - 1)) / cols, ch = (bottom - top - gap * (rows - 1)) / rows;
+          slice.forEach((it, n) => {
+            const col = n % cols, row = Math.floor(n / cols);
+            drawCell(g, it, imgs[n], W - mx - cw - col * (cw + gap), top + row * (ch + gap), cw, ch, opt.fields, color);
+          });
+        }
+        pdfFooter(g, W, H, p, pages, today);
+      }
 
       const jb = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
       const im = 3 + 3 * p, ct = im + 1, pg = im + 2;
@@ -744,7 +961,8 @@
     const prog = $('#pdfProg'); prog.hidden = false; prog.value = 0;
     try {
       const blob = await buildPdf(items, {
-        layout: $('#pdfLayout').value, fields: pdfFields(), title: pdfScopeTitle()
+        layout: $('#pdfLayout').value, fields: pdfFields(), title: pdfScopeTitle(),
+        cover: F('cover') && $('#pdfCover').checked, coName: store.get('coName') || ''
       }, (d, t) => { prog.max = t; prog.value = d; $('#pdfText').textContent = `جارٍ الإنشاء… صفحة ${d} من ${t}`; });
       if (!blob) { $('#pdfText').textContent = 'تم الإيقاف'; }
       else {
@@ -805,8 +1023,8 @@
 
   function openSheet(id) { $('#' + id).hidden = false; document.body.classList.add('lock'); }
   function closeSheets() {
-    ['pdfSheet', 'settings', 'removedSheet'].forEach(id => { $('#' + id).hidden = true; });
-    if ($('#detail').hidden) document.body.classList.remove('lock');
+    ['pdfSheet', 'settings', 'removedSheet', 'priceSheet'].forEach(id => { $('#' + id).hidden = true; });
+    if ($('#detail').hidden || splitOn()) document.body.classList.remove('lock');
   }
 
   /* ───────────── ربط الواجهة ───────────── */
@@ -830,30 +1048,49 @@
   $('#coBack').onclick = () => { state.company = ''; state.category = ''; setView('companies'); };
   $('#tabbar').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.view === 'all') { state.company = ''; state.category = ''; }
+    if (b.dataset.view === 'all' || b.dataset.view === 'favs') { state.company = ''; state.category = ''; }
     setView(b.dataset.view);
   });
   $('#sort').value = state.sort;
   $('#sort').addEventListener('change', e => { state.sort = e.target.value; store.set('sort', state.sort); apply(); });
   $('#inStock').checked = state.inStock;   // «المتوفر فقط» مفعّل تلقائياً في كل فتح، والمستخدم يلغيه بنفسه
-  $('#inStock').addEventListener('change', e => { state.inStock = e.target.checked; apply(); });
-  /* ───────────── المظهر ───────────── */
-  const THEMES = { classic: ['الحالي', '#c25e27'], dark: ['داكن', '#16140f'], sage: ['أخضر هادئ', '#3f7d5c'], ocean: ['أزرق بحري', '#2f6f9f'] };
-  const THEME_BAR = { classic: '#c25e27', dark: '#151413', sage: '#3f7d5c', ocean: '#2f6f9f' };   // لون شريط المتصفح
-  function applyTheme(name) {
-    if (!THEMES[name]) name = 'classic';
-    document.documentElement.dataset.theme = name;
-    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', THEME_BAR[name]);
-    document.querySelectorAll('#themes [data-theme]').forEach(b => b.classList.toggle('on', b.dataset.theme === name));
-    return name;
+  /* «المتوفر فقط»: خطوتان — ضغط الزر ثم رسالة تأكيد (لتفادي الضغط بالخطأ).
+     لا يُحفظ الاختيار: عند كل فتح جديد للتطبيق يرجع «المتوفر فقط» مفعّلاً. */
+  const codeNorm = v => String(v).trim().replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+  function askDialog({ title, text = '', input = false, validate }) {      // نافذة تأكيد، أو إدخال رمز عند input
+    return new Promise(res => {
+      const sh = $('#confirmSheet'), inp = $('#cfPass'), err = $('#cfErr');
+      $('#cfTitle').textContent = title; $('#cfText').textContent = text; $('#cfText').hidden = !text;
+      $('#cfYes').textContent = input ? 'دخول' : 'نعم';
+      inp.hidden = !input; inp.value = ''; err.hidden = true; sh.hidden = false;
+      if (input) inp.focus();
+      const done = v => { sh.hidden = true; inp.value = ''; $('#cfYes').onclick = $('#cfNo').onclick = sh.onclick = inp.onkeydown = null; res(v); };
+      const ok = () => {
+        if (!input) return done(true);
+        const m = validate ? validate(codeNorm(inp.value)) : true;
+        if (m === true) done(true); else { err.textContent = m; err.hidden = false; inp.select(); }
+      };
+      $('#cfYes').onclick = ok; $('#cfNo').onclick = () => done(false);
+      sh.onclick = e => { if (e.target === sh) { e.stopPropagation(); done(false); } };
+      inp.onkeydown = e => { if (e.key === 'Enter') ok(); };
+    });
   }
-  applyTheme(store.get('theme') || 'classic');
-  $('#themes').addEventListener('click', e => {
-    const b = e.target.closest('[data-theme]'); if (!b) return;
-    const n = applyTheme(b.dataset.theme); store.set('theme', n); toast('المظهر: ' + THEMES[n][0]);
+  const askConfirm = (title, text) => askDialog({ title, text });
+  $('#inStock').addEventListener('click', async e => {
+    e.preventDefault();
+    const want = !state.inStock;
+    const ok = await askConfirm(want ? 'عرض المتوفر فقط' : 'إظهار جميع المنتجات',
+      want ? 'هل تريد عرض المواد المتوفرة فقط؟' : 'هل تريد إظهار جميع المنتجات بما فيها غير المتوفرة؟');
+    if (!ok) return;
+    state.inStock = want; $('#inStock').checked = want; apply();
   });
-  $('#btnPdf').onclick = openPdfSheet;
-  $('#btnSettings').onclick = () => { $('#optCustomer').checked = state.customer; $('#optSmart').checked = state.smart; updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings'); };
+  $('#btnPdf').onclick = () => openPdfSheet();
+  $('#btnSettings').onclick = async () => {
+    if (SETTINGS_CODE && !(await askDialog({ title: 'الإعدادات', text: 'أدخل الرمز للدخول', input: true, validate: v => v === codeNorm(SETTINGS_CODE) || 'الرمز غير صحيح' }))) return;
+    $('#optCustomer').checked = state.customer; $('#optSmart').checked = state.smart;
+    renderFeatList(); $('#optSlideSec').value = String(slideSec()); $('#optCoName').value = store.get('coName') || '';
+    updateDataInfo(); updateRemovedCount(); updateStorageInfo(); openSheet('settings');
+  };
   $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); applyScanBtn(); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
   $('#optSmart').addEventListener('change', e => { state.smart = e.target.checked; store.set('smart', state.smart ? '1' : '0'); if (state.view === 'all') apply(false); toast(state.smart ? 'البحث الذكي مفعّل' : 'البحث الذكي متوقف'); });
   $('#btnRefresh').onclick = () => refresh(true);
@@ -867,7 +1104,7 @@
     }
   });
   document.addEventListener('keydown', e => {
-    if ($('#detail').hidden) return;
+    if ($('#detail').hidden || sl.open || !$('#confirmSheet').hidden) return;
     if (e.key === 'Escape') closeDetail(false);
     else if (e.key === 'ArrowLeft' && state.cur < state.list.length - 1) showDetail(state.cur + 1);
     else if (e.key === 'ArrowRight' && state.cur > 0) showDetail(state.cur - 1);
@@ -886,7 +1123,9 @@
   /* ───────────── التقريب بإصبعين (مثل معرض الصور): تغيير عدد الأعمدة ───────────── */
   const LEVELS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
   const grid = $('#grid');
-  const autoCols = () => Math.max(2, Math.min(4, Math.floor(window.innerWidth / 190)));
+  const autoCols = () => Math.max(2, Math.min(4, Math.floor(($('main').clientWidth || window.innerWidth) / 190)));
+  const lmOn = () => state.listMode && F('list');
+  function relayout() { if (!cols) setCols(autoCols(), true); else updTier(); }
   let cols = +store.get('cols') || 0;                  // 0 = تلقائي حسب حجم الشاشة
   function setCols(n, silent) {
     n = LEVELS.includes(n) ? n : LEVELS.reduce((a, b) => Math.abs(b - n) < Math.abs(a - n) ? b : a);
@@ -903,9 +1142,10 @@
     const w = grid.clientWidth; if (!w) return;
     const n = +grid.dataset.cols || autoCols();
     const cw = (w - 28 - 12 * (n - 1)) / n;
-    const t = cw >= 190 ? 0 : cw >= 150 ? 1 : cw >= 120 ? 2 : cw >= 90 ? 3 : cw >= 62 ? 4 : 5;
+    let t = cw >= 190 ? 0 : cw >= 150 ? 1 : cw >= 120 ? 2 : cw >= 90 ? 3 : cw >= 62 ? 4 : 5, cwv = Math.max(40, Math.round(cw));
+    if (lmOn()) { t = 0; cwv = 200; }                       // عرض القائمة: كل المعلومات ظاهرة دائماً
     if (grid.dataset.t !== String(t)) grid.dataset.t = t;
-    grid.style.setProperty('--cw', Math.max(40, Math.round(cw)) + 'px');
+    grid.style.setProperty('--cw', cwv + 'px');
   }
   if ('ResizeObserver' in window) new ResizeObserver(updTier).observe(grid);
   window.addEventListener('resize', updTier);
@@ -941,7 +1181,7 @@
 
   let pinch = null;
   const dist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-  const canPinch = () => state.view === 'all' && !document.body.classList.contains('lock');
+  const canPinch = () => state.view === 'all' && !lmOn() && !document.body.classList.contains('lock');
   document.addEventListener('touchstart', e => { pinch = e.touches.length === 2 && canPinch() ? { d: dist(e) } : null; }, { passive: true });
   document.addEventListener('touchmove', e => {
     if (e.touches.length !== 2 || !pinch) return;
@@ -1007,7 +1247,7 @@
     try { if (scanner) scanner.clear(); } catch { /* تجاهل */ }
     scanner = null; $('#qrReader').innerHTML = '';
     $('#scanOvl').hidden = true;
-    if ($('#detail').hidden) document.body.classList.remove('lock');
+    if ($('#detail').hidden || splitOn()) document.body.classList.remove('lock');
   }
   async function onScanned(code) {
     if (!scanning) return; scanning = false;
@@ -1020,8 +1260,8 @@
         await closeScan();
         let idx = state.list.indexOf(hit);
         if (idx < 0) {                                      // المادة خارج الفلتر الحالي: صفّر الفلاتر
-          state.q = ''; $('#q').value = ''; $('#clear').hidden = true; state.company = ''; state.category = ''; state.inStock = false; $('#inStock').checked = false;
-          if (state.view === 'companies') setView('all'); else apply(false);
+          state.q = ''; $('#q').value = ''; $('#clear').hidden = true; state.company = ''; state.category = ''; state.inStock = false; $('#inStock').checked = false; state.pMin = state.pMax = null;
+          if (state.view === 'companies' || state.favOnly) setView('all'); else apply(false);
           idx = state.list.indexOf(hit);
         }
         if (idx >= 0) openDetail(idx);
@@ -1037,6 +1277,176 @@
   }
   $('#btnScan').onclick = openScan;
   $('#scanClose').onclick = closeScan;
+
+
+  /* ═══════════════ الميزات الإضافية ═══════════════ */
+  function renderFeatList() {
+    $('#featList').innerHTML = FEAT_DEFS.map(([k, t, d]) =>
+      `<label class="row-switch"><span><b>${t}</b><small>${d}</small></span><input type="checkbox" data-feat="${k}"${F(k) ? ' checked' : ''}></label>`).join('');
+  }
+  $('#featList').addEventListener('change', e => {
+    const k = e.target.dataset.feat; if (!k) return;
+    feat[k] = e.target.checked; store.set('feat', JSON.stringify(feat));
+    applyFeatures();
+    toast((FEAT_DEFS.find(d => d[0] === k) || [])[1] + (feat[k] ? ': مفعّلة' : ': متوقفة'));
+  });
+  function applyFeatures() {
+    document.body.classList.toggle('feat-fav', F('fav'));
+    if (!F('fav') && state.favOnly) setView('all');
+    if (!F('price')) state.pMin = state.pMax = null;
+    if (!F('slide') && sl.open) closeSlide(false);
+    $('#tabFav').hidden = !F('fav'); $('#dFav').hidden = !F('fav'); $('#dShareLink').hidden = !F('link');
+    paintListMode();
+    syncDetailMode();
+    if (state.view === 'all') apply(false); else updToolsUi();
+  }
+
+  /* عرض القائمة المضغوطة */
+  function paintListMode() {
+    const on = lmOn();
+    grid.classList.toggle('lm', on);
+    document.querySelector('.zoom').hidden = on;
+    $('#viewLbl').textContent = on ? 'بطاقات' : 'قائمة';
+    $('#viewIcon').innerHTML = on ? ICONS.grid : ICONS.list;
+    updTier();
+  }
+  $('#btnView').onclick = () => { state.listMode = !state.listMode; store.set('viewmode', state.listMode ? 'list' : 'grid'); paintListMode(); };
+  window.addEventListener('resize', syncDetailMode);
+
+  /* فلتر نطاق السعر */
+  const numIn = t => { t = String(t).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[^\d.]/g, ''); return t === '' ? null : Number(t); };
+  $('#btnPrice').onclick = () => {
+    const ps = state.items.map(i => i.price).filter(p => p > 0);
+    $('#priceInfo').textContent = ps.length ? `أقل سعر: ${num(ps.reduce((a, b) => Math.min(a, b)))} — أعلى سعر: ${num(ps.reduce((a, b) => Math.max(a, b)))} IQD` : '';
+    $('#pMin').value = state.pMin == null ? '' : state.pMin; $('#pMax').value = state.pMax == null ? '' : state.pMax;
+    openSheet('priceSheet');
+  };
+  const applyPrice = () => {
+    let a = numIn($('#pMin').value), b = numIn($('#pMax').value);
+    if (a != null && b != null && a > b) [a, b] = [b, a];
+    state.pMin = a; state.pMax = b; closeSheets(); apply();
+  };
+  $('#pApply').onclick = applyPrice;
+  ['pMin', 'pMax'].forEach(id => $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') applyPrice(); }));
+  $('#pClear').onclick = () => { state.pMin = state.pMax = null; closeSheets(); apply(); };
+
+  /* المختارات */
+  $('#dFav').onclick = () => {
+    const it = state.list[state.cur]; if (!it) return;
+    toggleFav(it.code);
+    const st = $('#grid').querySelector(`[data-fav="${CSS.escape(it.code)}"]`); if (st) st.classList.toggle('on', favs.has(it.code));
+    toast(favs.has(it.code) ? '★ أُضيفت إلى المختارات' : 'أُزيلت من المختارات', 1200);
+  };
+  $('#favClear').onclick = async () => {
+    if (!favs.size) return;
+    if (!(await askConfirm('مسح المختارات', 'هل تريد إزالة كل المواد من المختارات؟'))) return;
+    favs.clear(); store.set('favs', '[]'); apply(false);
+  };
+  $('#favPdf').onclick = () => openPdfSheet('favs');
+  $('#favSlide').onclick = () => openSlide();
+
+  /* رابط مباشر للمادة */
+  const linkFor = it => `${location.origin}${location.pathname}?p=${encodeURIComponent(it.code)}`;
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch { /* جرّب الطريقة القديمة */ }
+    try {
+      const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0;top:0';
+      document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch { return false; }
+  }
+  $('#dShareLink').onclick = async () => {
+    const it = state.list[state.cur]; if (!it) return;
+    const url = linkFor(it);
+    if (navigator.share) { try { await navigator.share({ title: it.name, text: it.name, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+    toast((await copyText(url)) ? 'تم نسخ رابط المادة ✓' : url, 4000);
+  };
+  function tryLink() {
+    if (!pendingLink || !booted || !state.items.length) return;
+    const code = pendingLink; pendingLink = null;
+    try { history.replaceState(history.state, '', location.pathname); } catch { /* تجاهل */ }
+    if (!F('link')) return;
+    const it = state.items.find(x => sameCode(x.code, code));
+    if (!it) { toast('المادة غير موجودة في الكتالوج'); return; }
+    state.q = ''; $('#q').value = ''; $('#clear').hidden = true; state.company = ''; state.category = ''; state.pMin = state.pMax = null;
+    if (it.stock <= 0) { state.inStock = false; $('#inStock').checked = false; }
+    setView('all');
+    const idx = state.list.indexOf(it); if (idx >= 0) openDetail(idx);
+  }
+
+  /* عرض الشرائح (Slideshow) */
+  const slideSec = () => +store.get('slideSec') || 5;
+  function restartBar() {
+    const bar = $('#slBar'); bar.style.animation = 'none'; void bar.offsetWidth;
+    bar.style.animation = `slbar ${slideSec()}s linear forwards`; bar.style.animationPlayState = sl.playing ? 'running' : 'paused';
+  }
+  function slideShow(i) {
+    const it = sl.list[i]; if (!it) return;
+    sl.i = i;
+    const img = $('#slImg'), ph = $('#slPh'), col = coColor(it.company), k = ++sl.tok;
+    $('#slPos').textContent = `${i + 1} / ${sl.list.length}`;
+    $('#slName').textContent = it.name; $('#slCode').textContent = it.code;
+    const pr = $('#slPrice'); pr.textContent = fmt(it.price); pr.style.background = col; pr.style.color = textOn(col);
+    const st = $('#slStage'); st.classList.remove('in'); void st.offsetWidth; st.classList.add('in');
+    const noImg = () => { img.hidden = true; ph.hidden = false; ph.textContent = it.code; };
+    if (it.img) {
+      img.hidden = false; ph.hidden = true; img.onerror = noImg; img.src = imgPath(it, 'thumbs');
+      const f = new Image(); f.onload = () => { if (k === sl.tok) img.src = f.src; }; f.src = imgPath(it, 'full');
+    } else noImg();
+    const nx = sl.list[(i + 1) % sl.list.length]; if (nx && nx.img) new Image().src = imgPath(nx, 'full');
+    restartBar();
+  }
+  const slideStep = d => { const n = sl.list.length; if (n) slideShow((sl.i + d + n) % n); };
+  function paintPlay() { $('#slPlay').textContent = sl.playing ? '❚❚' : '▶'; $('#slBar').style.animationPlayState = sl.playing ? 'running' : 'paused'; }
+  async function openSlide() {
+    if (!state.list.length) { toast('لا توجد مواد لعرضها'); return; }
+    sl.list = state.list.slice(); sl.playing = true; sl.open = true;
+    $('#slideOvl').hidden = false; document.body.classList.add('lock');
+    history.pushState({ o: 'slide' }, '');
+    paintPlay(); slideShow(0);
+    try { if (navigator.wakeLock) sl.wl = await navigator.wakeLock.request('screen'); } catch { /* تجاهل */ }
+  }
+  function closeSlide(viaPop) {
+    if (!sl.open) return;
+    sl.open = false; $('#slideOvl').hidden = true;
+    try { if (sl.wl) sl.wl.release(); } catch { /* تجاهل */ } sl.wl = null;
+    if ($('#detail').hidden || splitOn()) { if (!anySheetOpen()) document.body.classList.remove('lock'); }
+    if (!viaPop && history.state && history.state.o === 'slide') { sl.popGuard = true; history.back(); }
+  }
+  $('#btnSlide').onclick = openSlide;
+  $('#slClose').onclick = () => closeSlide(false);
+  $('#slPlay').onclick = () => { sl.playing = !sl.playing; paintPlay(); };
+  $('#slPrev').onclick = e => { e.stopPropagation(); slideStep(-1); };
+  $('#slNext').onclick = e => { e.stopPropagation(); slideStep(1); };
+  $('#slBar').addEventListener('animationend', () => { if (sl.open && sl.playing) slideStep(1); });
+  $('#slStage').addEventListener('click', e => { if (e.target.closest('.sl-nav')) return; sl.playing = !sl.playing; paintPlay(); });
+  let slx = null;
+  $('#slStage').addEventListener('touchstart', e => { slx = e.touches[0].clientX; }, { passive: true });
+  $('#slStage').addEventListener('touchend', e => {
+    if (slx === null) return; const dx = e.changedTouches[0].clientX - slx; slx = null;
+    if (dx < -60) slideStep(1); else if (dx > 60) slideStep(-1);                  // نفس اتجاه التفاصيل (RTL)
+  });
+  document.addEventListener('keydown', e => {
+    if (!sl.open) return;
+    if (e.key === 'Escape') closeSlide(false);
+    else if (e.key === 'ArrowLeft') slideStep(1);
+    else if (e.key === 'ArrowRight') slideStep(-1);
+    else if (e.key === ' ') { e.preventDefault(); sl.playing = !sl.playing; paintPlay(); }
+  });
+  $('#optSlideSec').addEventListener('change', e => { store.set('slideSec', e.target.value); if (sl.open) restartBar(); toast('مدة الشريحة: ' + e.target.value + ' ث'); });
+  $('#optCoName').addEventListener('input', e => store.set('coName', e.target.value.trim()));
+
+  /* حجم الخط */
+  function applyFs(v) {
+    if (!['s', 'm', 'l', 'xl'].includes(v)) v = 'm';
+    document.documentElement.dataset.fs = v;
+    document.querySelectorAll('#fsSeg button').forEach(b => b.classList.toggle('on', b.dataset.fs === v));
+    return v;
+  }
+  $('#fsSeg').addEventListener('click', e => { const b = e.target.closest('[data-fs]'); if (b) { store.set('fs', applyFs(b.dataset.fs)); updTier(); } });
+  applyFs(store.get('fs') || 'm');
+
+  applyFeatures();
+  booted = true; tryLink();
 
   window.__catalog = { state, apply, norm, stepCols, curCols };     // للفحص والاختبار فقط
 })();
