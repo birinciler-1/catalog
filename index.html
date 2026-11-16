@@ -8,6 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="الكتالوج">
+<script>try{var d=document.documentElement;d.dataset.theme=localStorage.getItem('theme')||'classic';d.dataset.fs=localStorage.getItem('fs')||'m'}catch(e){}</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
@@ -32,6 +33,14 @@
     <b id="coName"></b>
   </div>
   <div class="chips" id="chips" hidden></div>
+  <div class="favbar" id="favbar" hidden>
+    <b id="favCount"></b>
+    <span class="fb-act">
+      <button type="button" class="tbtn" id="favPdf"><span data-icon="pdf"></span><span>PDF</span></button>
+      <button type="button" class="tbtn" id="favSlide"><span data-icon="play"></span><span>شرائح</span></button>
+      <button type="button" class="tbtn" id="favClear"><span>مسح الكل</span></button>
+    </span>
+  </div>
   <div class="meta" id="meta">
     <span id="count"></span>
     <span class="zoom"><button type="button" id="zOut" aria-label="تصغير الصور">−</button><button type="button" id="zIn" aria-label="تكبير الصور">+</button></span>
@@ -40,10 +49,18 @@
       <option value="code">حسب الكود</option>
       <option value="priceAsc">الأرخص أولاً</option>
       <option value="priceDesc">الأغلى أولاً</option>
+      <option value="stockDesc">الباقي: الأكثر أولاً</option>
+      <option value="stockAsc">الباقي: الأقل أولاً</option>
+      <option value="inFirst">المتوفر أولاً</option>
       <option value="company">حسب الشركة</option>
       <option value="name">حسب الاسم</option>
     </select>
-    <label class="mini-switch"><input type="checkbox" id="inStock"><span>المتوفر فقط</span></label>
+    <label class="mini-switch"><input type="checkbox" id="inStock" checked><span data-icon="stock"></span><span>المتوفر فقط</span></label>
+  </div>
+  <div class="tools" id="tools" hidden>
+    <button type="button" class="tbtn" id="btnPrice"><span data-icon="tag"></span><span id="priceLbl">السعر</span></button>
+    <button type="button" class="tbtn" id="btnView"><span id="viewIcon"></span><span id="viewLbl">قائمة</span></button>
+    <button type="button" class="tbtn" id="btnSlide"><span data-icon="play"></span><span>عرض شرائح</span></button>
   </div>
 </header>
 
@@ -63,6 +80,7 @@
       <button class="nav prev" id="dPrev" type="button" aria-label="السابق" data-icon="chevR"></button>
       <button class="nav next" id="dNext" type="button" aria-label="التالي" data-icon="chevL"></button>
       <span class="pos" id="dPos"></span>
+      <button class="fstar big" id="dFav" type="button" aria-label="مختارات" data-icon="star"></button>
     </div>
     <div class="dbody">
       <h2 id="dName"></h2>
@@ -72,6 +90,7 @@
     <div class="dactions">
       <button class="btn primary" id="dShare" type="button"><span data-icon="share"></span><span>مشاركة الصورة</span></button>
       <button class="btn" id="dShareText" type="button">مشاركة نص</button>
+      <button class="btn" id="dShareLink" type="button"><span data-icon="link"></span><span>رابط</span></button>
     </div>
     <div class="dremove"><button class="btn danger" id="dRemove" type="button">إزالة من الكتالوج</button></div>
   </div>
@@ -91,11 +110,13 @@
         <option value="6" selected>6 منتجات</option>
         <option value="4">4 منتجات</option>
         <option value="1">منتج واحد بالتفصيل</option>
+        <option value="table">قائمة أسعار جدولية (بدون صور)</option>
       </select>
     </label>
     <label class="check"><input type="checkbox" id="pdfStock"><span>المتوفر فقط (الباقي)</span></label>
+    <label class="check" id="pdfCoverRow"><input type="checkbox" id="pdfCover" checked><span>إضافة غلاف وفهرس</span></label>
     <div id="pdfFieldsBox" class="fieldsbox">
-      <span class="fb-t">ما الذي يظهر في البطاقة؟</span>
+      <span class="fb-t">ما الذي يظهر؟</span>
       <div class="fb-g">
         <label class="check"><input type="checkbox" id="pdfFPrice" checked><span>السعر</span></label>
         <label class="check"><input type="checkbox" id="pdfFPack" checked><span>التعبئة</span></label>
@@ -129,6 +150,46 @@
       <span><b>وضع عرض الزبون</b><small>يُخفي سعر الكارتون والكمية والباركود من الشاشة والصور والـ PDF</small></span>
       <input type="checkbox" id="optCustomer">
     </label>
+
+    <label class="row-switch" style="margin-top:10px">
+      <span><b>البحث الذكي</b><small>يتجاهل «ال» والحروف المكررة ويتحمل الأخطاء الإملائية البسيطة. عند إيقافه يكون البحث حرفياً فقط</small></span>
+      <input type="checkbox" id="optSmart" checked>
+    </label>
+
+    <section>
+      <h4>الميزات الإضافية</h4>
+      <p class="hint">شغّل أو أطفئ كل ميزة على حدة.</p>
+      <div id="featList"></div>
+      <label class="field"><span>مدة كل شريحة في «عرض الشرائح»</span>
+        <select id="optSlideSec"><option value="3">3 ثوانٍ</option><option value="5">5 ثوانٍ</option><option value="8">8 ثوانٍ</option><option value="12">12 ثانية</option></select>
+      </label>
+      <label class="field"><span>اسم الشركة على غلاف PDF (اتركه فارغاً لاستعمال الاسم المكتوب في الكود)</span>
+        <input id="optCoName" class="textin" type="text" autocomplete="off" spellcheck="false">
+      </label>
+    </section>
+
+    <section>
+      <h4>حجم الخط</h4>
+      <div class="seg" id="fsSeg">
+        <button type="button" data-fs="s">صغير</button><button type="button" data-fs="m">متوسط</button><button type="button" data-fs="l">كبير</button><button type="button" data-fs="xl">كبير جداً</button>
+      </div>
+    </section>
+
+    <section>
+      <h4>المظهر</h4>
+      <div class="themes" id="themes">
+        <button type="button" data-theme="classic" class="on"><i class="sw" style="--a:#f2efeb;--b:#fff;--c:#c25e27"></i><span>الحالي</span></button>
+        <button type="button" data-theme="dark"><i class="sw" style="--a:#151413;--b:#2a2724;--c:#e0884a"></i><span>داكن</span></button>
+        <button type="button" data-theme="sage"><i class="sw" style="--a:#eef2ec;--b:#fbfdfa;--c:#3f7d5c"></i><span>أخضر هادئ</span></button>
+        <button type="button" data-theme="ocean"><i class="sw" style="--a:#eaf0f5;--b:#fafcfe;--c:#2f6f9f"></i><span>أزرق بحري</span></button>
+      </div>
+    </section>
+
+    <section id="secDebts">
+      <h4>ديون الزبائن</h4>
+      <p class="hint">قائمة الزبائن المدينين من ملف إكسل. للخصوصية يُفضَّل استيراد الملف من جهازك بدل رفعه على الموقع، لأن أي ملف على الموقع يستطيع تحميله من يعرف رابطه.</p>
+      <button class="btn" id="btnDebts" type="button">💳 ديون الزبائن</button>
+    </section>
 
     <section>
       <h4>المواد المزالة</h4>
@@ -174,9 +235,80 @@
 <nav class="tabbar" id="tabbar">
   <button type="button" data-view="all" class="on"><span data-icon="grid"></span><span>كل المواد</span></button>
   <button type="button" data-view="companies"><span data-icon="building"></span><span>الشركات</span></button>
+  <button type="button" data-view="favs" id="tabFav"><span data-icon="star"></span><span>المختارات<b class="tabn" id="favN"></b></span></button>
 </nav>
 
 <div id="toast" role="status" aria-live="polite"></div>
+
+<!-- تأكيد «المتوفر فقط» -->
+<div id="confirmSheet" class="overlay" hidden role="dialog" aria-modal="true" style="z-index:90">
+  <div class="panel sheet confirm">
+    <h3 id="cfTitle"></h3>
+    <p class="hint" id="cfText"></p>
+    <input id="cfPass" class="passin" type="password" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="الرمز" aria-label="الرمز" hidden>
+    <p class="hint perr" id="cfErr" hidden></p>
+    <div class="btnrow"><button class="btn primary" id="cfYes" type="button">نعم</button><button class="btn" id="cfNo" type="button">إلغاء</button></div>
+  </div>
+</div>
+
+<!-- فلتر السعر -->
+<div id="priceSheet" class="overlay" hidden role="dialog" aria-modal="true">
+  <div class="panel sheet">
+    <div class="sheet-head"><h3>نطاق السعر</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
+    <p class="hint" id="priceInfo"></p>
+    <div class="prow">
+      <label class="field"><span>من (IQD)</span><input id="pMin" class="textin" type="text" inputmode="numeric" autocomplete="off" placeholder="0"></label>
+      <label class="field"><span>إلى (IQD)</span><input id="pMax" class="textin" type="text" inputmode="numeric" autocomplete="off" placeholder="بلا حد"></label>
+    </div>
+    <div class="btnrow"><button class="btn primary" id="pApply" type="button">تطبيق</button><button class="btn" id="pClear" type="button">مسح الفلتر</button></div>
+  </div>
+</div>
+
+<!-- عرض الشرائح -->
+<div id="slideOvl" class="slide-ovl" hidden role="dialog" aria-modal="true">
+  <div class="sl-top">
+    <span id="slPos" class="sl-pos"></span>
+    <span class="sl-ctl"><button type="button" id="slPlay" aria-label="إيقاف مؤقت">❚❚</button><button type="button" id="slClose" aria-label="إغلاق">✕</button></span>
+  </div>
+  <div class="sl-stage" id="slStage">
+    <img id="slImg" alt="">
+    <div class="sl-ph" id="slPh" hidden></div>
+    <button type="button" class="sl-nav prev" id="slPrev" aria-label="السابق" data-icon="chevR"></button>
+    <button type="button" class="sl-nav next" id="slNext" aria-label="التالي" data-icon="chevL"></button>
+  </div>
+  <div class="sl-info">
+    <div class="sl-name" id="slName"></div>
+    <div class="sl-row"><span class="sl-code" id="slCode"></span><span class="sl-price" id="slPrice"></span></div>
+  </div>
+  <div class="sl-bar"><i id="slBar"></i></div>
+</div>
+
+<!-- ديون الزبائن -->
+<div id="debtSheet" class="overlay" hidden role="dialog" aria-modal="true">
+  <div class="panel sheet">
+    <div class="sheet-head"><h3>ديون الزبائن</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
+    <div class="dsum">
+      <div><small>إجمالي الديون</small><b id="debtTotal">0</b></div>
+      <div><small>عدد الزبائن</small><b id="debtCount">0</b></div>
+    </div>
+    <div class="dctl">
+      <input id="debtQ" class="textin" type="search" autocomplete="off" placeholder="ابحث باسم الزبون…">
+      <select id="debtSort" aria-label="ترتيب الديون">
+        <option value="amount">الأكبر ديناً</option>
+        <option value="pay">الأقدم قبضاً</option>
+        <option value="inv">الأحدث قائمة</option>
+        <option value="name">حسب الاسم</option>
+      </select>
+    </div>
+    <div id="debtList"></div>
+    <p class="hint" id="debtInfo"></p>
+    <div class="btnrow">
+      <button class="btn" id="debtRefresh" type="button">تحديث من الموقع</button>
+      <button class="btn" id="debtImport" type="button">استيراد ملف إكسل</button>
+    </div>
+    <input id="debtFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  </div>
+</div>
 
 <!-- المواد المزالة -->
 <div id="removedSheet" class="overlay" hidden role="dialog" aria-modal="true">
