@@ -23,6 +23,7 @@
       <input id="q" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ابحث: ترمس، 01010، بيرينجلر…">
       <button id="clear" type="button" aria-label="مسح" hidden data-icon="close"></button>
     </label>
+    <button class="icon-btn" id="btnScan" type="button" aria-label="مسح باركود" data-icon="scan"></button>
     <button class="icon-btn" id="btnPdf" type="button" aria-label="تصدير PDF" data-icon="pdf"></button>
     <button class="icon-btn" id="btnSettings" type="button" aria-label="الإعدادات" data-icon="sliders"></button>
   </div>
@@ -185,6 +186,15 @@
     <div id="remList"></div>
     <div class="btnrow"><button class="btn" id="remAll" type="button">إرجاع الكل</button></div>
   </div>
+</div>
+
+<!-- قارئ الباركود -->
+<div id="scanOvl" class="scan-ovl" hidden role="dialog" aria-modal="true">
+  <div class="scan-ttl">📷 مسح الباركود</div>
+  <div id="qrReader"></div>
+  <div class="scan-hint">وجّه الكاميرا على الباركود — يمسح تلقائياً</div>
+  <div id="scanMsg" class="scan-msg">جارٍ التشغيل…</div>
+  <button class="scan-x" id="scanClose" type="button">✕ إغلاق</button>
 </div>
 
 <script src="app.js"></script>
