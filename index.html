@@ -55,12 +55,7 @@
       <option value="company">حسب الشركة</option>
       <option value="name">حسب الاسم</option>
     </select>
-    <label class="mini-switch"><input type="checkbox" id="inStock" checked><span data-icon="stock"></span><span>المتوفر فقط</span></label>
-  </div>
-  <div class="tools" id="tools" hidden>
-    <button type="button" class="tbtn" id="btnPrice"><span data-icon="tag"></span><span id="priceLbl">السعر</span></button>
-    <button type="button" class="tbtn" id="btnView"><span id="viewIcon"></span><span id="viewLbl">قائمة</span></button>
-    <button type="button" class="tbtn" id="btnSlide"><span data-icon="play"></span><span>عرض شرائح</span></button>
+    <button type="button" class="tbtn qbtn" id="btnQuick"><span data-icon="bolt"></span><span>إعدادات سريعة</span><i class="qdot" id="qDot" hidden></i></button>
   </div>
 </header>
 
@@ -161,7 +156,7 @@
       <p class="hint">شغّل أو أطفئ كل ميزة على حدة.</p>
       <div id="featList"></div>
       <label class="field"><span>مدة كل شريحة في «عرض الشرائح»</span>
-        <select id="optSlideSec"><option value="3">3 ثوانٍ</option><option value="5">5 ثوانٍ</option><option value="8">8 ثوانٍ</option><option value="12">12 ثانية</option></select>
+        <select id="optSlideSec"><option value="1">ثانية واحدة</option><option value="2">ثانيتان</option><option value="3">3 ثوانٍ</option><option value="5">5 ثوانٍ</option><option value="8">8 ثوانٍ</option><option value="12">12 ثانية</option></select>
       </label>
       <label class="field"><span>اسم الشركة على غلاف PDF (اتركه فارغاً لاستعمال الاسم المكتوب في الكود)</span>
         <input id="optCoName" class="textin" type="text" autocomplete="off" spellcheck="false">
@@ -283,20 +278,33 @@
   <div class="sl-bar"><i id="slBar"></i></div>
 </div>
 
+<!-- الإعدادات السريعة -->
+<div id="quickSheet" class="overlay" hidden role="dialog" aria-modal="true">
+  <div class="panel sheet">
+    <div class="sheet-head"><h3>إعدادات سريعة</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
+    <div class="qlist" id="tools">
+      <label class="qrow"><span data-icon="stock"></span><span class="ql">المتوفر فقط</span><input type="checkbox" id="inStock" checked></label>
+      <button type="button" class="tbtn" id="btnPrice"><span data-icon="tag"></span><span class="ql">نطاق السعر</span><small id="priceLbl">غير محدد</small></button>
+      <button type="button" class="tbtn" id="btnView"><span id="viewIcon"></span><span class="ql">طريقة العرض</span><small id="viewLbl">قائمة</small></button>
+      <button type="button" class="tbtn" id="btnSlide"><span data-icon="play"></span><span class="ql">عرض شرائح</span></button>
+    </div>
+  </div>
+</div>
+
 <!-- ديون الزبائن -->
 <div id="debtSheet" class="overlay" hidden role="dialog" aria-modal="true">
   <div class="panel sheet">
     <div class="sheet-head"><h3>ديون الزبائن</h3><button class="x flat" data-close type="button" aria-label="إغلاق" data-icon="close"></button></div>
     <div class="dsum">
-      <div><small>إجمالي الديون</small><b id="debtTotal">0</b></div>
+      <div><small>إجمالي الديون</small><b id="debtTotal">••••••</b><button type="button" class="linkbtn" id="debtTotalBtn">إظهار (المالك)</button></div>
       <div><small>عدد الزبائن</small><b id="debtCount">0</b></div>
     </div>
     <div class="dctl">
       <input id="debtQ" class="textin" type="search" autocomplete="off" placeholder="ابحث باسم الزبون…">
       <select id="debtSort" aria-label="ترتيب الديون">
         <option value="amount">الأكبر ديناً</option>
-        <option value="pay">الأقدم قبضاً</option>
-        <option value="inv">الأحدث قائمة</option>
+        <option value="rem">الأقرب استحقاقاً</option>
+        <option value="pay">الأحدث دفعاً</option>
         <option value="name">حسب الاسم</option>
       </select>
     </div>

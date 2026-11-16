@@ -434,3 +434,14 @@ body.split-on #toast{left:calc(50% + var(--pane)/2)}
 .d-grid b{font-weight:600}
 .d-grid small{color:var(--mut);font-weight:400;margin-inline-start:4px}
 .d-late{margin-top:8px;font-size:13.5px;font-weight:700;color:var(--dng)}
+.linkbtn{margin-top:4px;align-self:flex-start;background:rgba(255,255,255,.22);color:inherit;border:0;border-radius:10px;padding:4px 10px;font:inherit;font-size:13px;cursor:pointer}
+.d-red{color:var(--dng)}
+.qbtn{position:relative;margin-inline-start:auto}
+.qdot{position:absolute;top:4px;inset-inline-end:4px;width:9px;height:9px;border-radius:50%;background:var(--o)}
+.qlist{display:flex;flex-direction:column;gap:10px;padding:6px 0 4px}
+.qlist .tbtn,.qrow{height:54px;border-radius:14px;padding:0 14px;width:100%;justify-content:flex-start;display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--line);font:inherit;font-size:16px;cursor:pointer}
+.qlist .ql{flex:1;text-align:start;font-weight:700}
+.qlist small{color:var(--o);font-weight:700;font-size:14px}
+.qrow svg{width:20px;height:20px;color:var(--o)}
+.qrow input{accent-color:var(--o);width:24px;height:24px;margin:0}
+.st-ok{color:#15803d;font-weight:700}.st-no{color:var(--dng);font-weight:700}

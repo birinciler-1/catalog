@@ -8,6 +8,7 @@
   const CHUNK = 60;
 
   /* ═══════════ إعدادات يمكنك تغييرها من هنا ═══════════ */
+  const OWNER_CODE = '9999';           // رمز المالك لإظهار إجمالي الديون (غيّره). الإجمالي مخفي عن المندوبين دائماً ويُخفى من جديد عند كل دخول
   const SETTINGS_CODE = '1234';        // رمز دخول الإعدادات (يُطلب في كل مرة). غيّره كما تشاء، أو اتركه فارغاً '' لإلغاء الرمز
   const COMPANY_NAME = 'BİRİNCİLER';   // اسم الشركة على غلاف ملف PDF وشريط صفحاته (بدون اسم المندوب)
   const DEBT_LATE_DAYS = 30;           // الزبون الذي مضى على آخر قبض منه أكثر من هذا العدد من الأيام يظهر «متأخراً» في قائمة الديون
@@ -65,6 +66,7 @@
     play: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10.5 9.5v5l4-2.5z"/></svg>',
     tag: '<svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/></svg>',
     link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
     stock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></svg>',
     scan: '<svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>'
   };
@@ -227,12 +229,13 @@
     return a != null && b != null ? `${num(a)} – ${num(b)}` : a != null ? `من ${num(a)}` : `حتى ${num(b)}`;
   }
   function updToolsUi() {
-    const co = state.view === 'companies';
+    const co = state.view === 'companies', pa0 = state.pMin != null || state.pMax != null;
     $('#btnPrice').hidden = !F('price'); $('#btnView').hidden = !F('list'); $('#btnSlide').hidden = !F('slide') || state.favOnly;
-    $('#tools').hidden = co || !(F('price') || F('list') || F('slide'));
-    const pa = state.pMin != null || state.pMax != null;
+    $('#btnQuick').hidden = co;
+    $('#qDot').hidden = !(pa0 || !state.inStock);
+    const pa = pa0;
     $('#btnPrice').classList.toggle('on', pa);
-    $('#priceLbl').textContent = pa ? priceLabel() : 'السعر';
+    $('#priceLbl').textContent = pa ? priceLabel() : 'غير محدد';
     $('#favbar').hidden = co || !state.favOnly || !F('fav');
     $('#favSlide').hidden = !F('slide');
     $('#favCount').textContent = `${num(state.list.length)} مختارة`;
@@ -389,10 +392,9 @@
       `<div class="p-code"><small>الكود</small><b>${esc(it.code)}</b></div>`;
     const status = it.stock > 0 ? (cust ? 'متوفر' : `متوفر (${num(it.stock)})`) : 'غير متوفر';
     const rows = [
-      ['الكود', it.code, true], ['الشركة', `<span class="cdot" style="background:${coColor(it.company)}"></span>${esc(it.company)}`, false, true],
+      ['الحالة', `<span class="${it.stock > 0 ? 'st-ok' : 'st-no'}">${status}</span>`, false, true], ['الشركة', `<span class="cdot" style="background:${coColor(it.company)}"></span>${esc(it.company)}`, false, true],
       !cust && it.barcode ? ['الباركود', it.barcode, true] : null,
       !cust && it.pack ? ['عدد التعبئة', num(it.pack), true] : null,
-      ['الحالة', status]
     ].filter(Boolean);
     $('#dRows').innerHTML = rows.map(r => `<dt>${r[0]}</dt><dd class="${r[2] ? 'ltr' : ''}">${r[3] ? r[1] : esc(r[1])}</dd>`).join('');
     $('#dPrev').hidden = i <= 0;
@@ -408,7 +410,7 @@
 
   /* عرض بنافذتين: على الشاشات العريضة (آيباد/لابتوب) تظهر التفاصيل بجانب القائمة بدل نافذة تغطي الصفحة */
   const splitOn = () => F('split') && window.innerWidth >= 800;
-  const anySheetOpen = () => ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet', 'scanOvl', 'slideOvl'].some(id => !$('#' + id).hidden);
+  const anySheetOpen = () => ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet', 'quickSheet', 'scanOvl', 'slideOvl'].some(id => !$('#' + id).hidden);
   function syncDetailMode() {
     const split = splitOn(), open = !$('#detail').hidden, b = document.body.classList;
     b.toggle('split-on', split);
@@ -1027,7 +1029,7 @@
 
   function openSheet(id) { $('#' + id).hidden = false; document.body.classList.add('lock'); }
   function closeSheets() {
-    ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet'].forEach(id => { $('#' + id).hidden = true; });
+    ['pdfSheet', 'settings', 'removedSheet', 'priceSheet', 'debtSheet', 'quickSheet'].forEach(id => { $('#' + id).hidden = true; });
     if ($('#detail').hidden || splitOn()) document.body.classList.remove('lock');
   }
 
@@ -1088,6 +1090,7 @@
     if (!ok) return;
     state.inStock = want; $('#inStock').checked = want; apply();
   });
+  $('#btnQuick').onclick = () => { updToolsUi(); openSheet('quickSheet'); };
   $('#btnPdf').onclick = () => openPdfSheet();
   $('#btnSettings').onclick = async () => {
     if (SETTINGS_CODE && !(await askDialog({ title: 'الإعدادات', text: 'أدخل الرمز للدخول', input: true, validate: v => v === codeNorm(SETTINGS_CODE) || 'الرمز غير صحيح' }))) return;
@@ -1311,7 +1314,7 @@
     const on = lmOn();
     grid.classList.toggle('lm', on);
     document.querySelector('.zoom').hidden = on;
-    $('#viewLbl').textContent = on ? 'بطاقات' : 'قائمة';
+    $('#viewLbl').textContent = on ? 'قائمة' : 'بطاقات';
     $('#viewIcon').innerHTML = on ? ICONS.grid : ICONS.list;
     updTier();
   }
@@ -1321,6 +1324,7 @@
   /* فلتر نطاق السعر */
   const numIn = t => { t = String(t).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[^\d.]/g, ''); return t === '' ? null : Number(t); };
   $('#btnPrice').onclick = () => {
+    closeSheets();
     const ps = state.items.map(i => i.price).filter(p => p > 0);
     $('#priceInfo').textContent = ps.length ? `أقل سعر: ${num(ps.reduce((a, b) => Math.min(a, b)))} — أعلى سعر: ${num(ps.reduce((a, b) => Math.max(a, b)))} IQD` : '';
     $('#pMin').value = state.pMin == null ? '' : state.pMin; $('#pMax').value = state.pMax == null ? '' : state.pMax;
@@ -1417,7 +1421,7 @@
     if ($('#detail').hidden || splitOn()) { if (!anySheetOpen()) document.body.classList.remove('lock'); }
     if (!viaPop && history.state && history.state.o === 'slide') { sl.popGuard = true; history.back(); }
   }
-  $('#btnSlide').onclick = openSlide;
+  $('#btnSlide').onclick = () => { closeSheets(); openSlide(); };
   $('#slClose').onclick = () => closeSlide(false);
   $('#slPlay').onclick = () => { sl.playing = !sl.playing; paintPlay(); };
   $('#slPrev').onclick = e => { e.stopPropagation(); slideStep(-1); };
@@ -1548,12 +1552,22 @@
   const toAmount = v => typeof v === 'number' ? v : (Number(codeNorm(v || '').replace(/[,٬\sA-Za-z]/g, '')) || 0);
   function parseDebts(buf) {
     const rows = xlsxRows(buf), out = [];
-    rows.forEach((r, k) => {
-      if (!r || r[0] === undefined || r[0] === null) return;
-      const name = String(r[0]).trim(); if (!name) return;
-      if (k === 0 && typeof r[1] !== 'number' && !/^[\d٠-٩,.\s]+$/.test(String(r[1] ?? '').trim())) return;     // سطر العناوين
-      const debt = toAmount(r[1]); if (!(debt > 0)) return;                                                     // مبلغ صفر = لا يظهر
-      out.push({ name, debt, inv: toIsoDate(r[2]), pay: toIsoDate(r[3]), paid: toAmount(r[4]) });
+    const nz = v => String(v ?? '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/\s+/g, ' ').trim();
+    let col = { name: 0, debt: 1, pay: 2, addr: 3 }, start = 0;
+    for (let k = 0; k < Math.min(rows.length, 6); k++) {                    // البحث عن سطر العناوين (يقبل ملف المحاسبة كما هو)
+      const h = (rows[k] || []).map(nz);
+      const iName = h.findIndex(x => x.includes('اسم') && x.includes('زبون'));
+      if (iName < 0) continue;
+      const iDebt = h.findIndex(x => x.includes('دينار')) >= 0 ? h.findIndex(x => x.includes('دينار')) : h.findIndex(x => x.includes('مبلغ'));
+      const iPay = h.findIndex(x => x.includes('اخر') && (x.includes('دفع') || x.includes('قبض')));
+      const iAddr = h.findIndex(x => x.includes('عنوان'));
+      col = { name: iName, debt: iDebt >= 0 ? iDebt : 1, pay: iPay >= 0 ? iPay : 2, addr: iAddr >= 0 ? iAddr : 3 }; start = k + 1; break;
+    }
+    rows.slice(start).forEach(r => {
+      if (!r) return;
+      const name = String(r[col.name] ?? '').trim(); if (!name || nz(name) === 'المجموع') return;
+      const debt = toAmount(r[col.debt]); if (!(debt >= 1)) return;                                              // صفر أو دائن أو كسور تافهة = لا يظهر
+      out.push({ name, debt: Math.round(debt), pay: toIsoDate(r[col.pay]), addr: String(r[col.addr] ?? '').replace(/\s+/g, ' ').trim() });
     });
     return out;
   }
@@ -1569,26 +1583,35 @@
   const ago = n => n === null ? '' : n < 0 ? '' : n === 0 ? 'اليوم' : n === 1 ? 'أمس' : n === 2 ? 'قبل يومين' : n <= 10 ? `قبل ${n} أيام` : `قبل ${n} يوماً`;
   const showDate = iso => iso ? iso.split('-').reverse().join('/') : '—';
   const iqd = n => `${num(n)} IQD`;
+  const remDays = d => { const n = dayDiff(d.pay); return n === null ? null : DEBT_LATE_DAYS - n; };   // المدة الباقية للدفع التالي = 30 يوماً من آخر دفع
+  let ownerOpen = false;                                                                                    // إجمالي الديون مخفي حتى يُدخل المالك رمزه
   function renderDebts() {
     const q = norm($('#debtQ').value), sort = $('#debtSort').value;
     let list = debts.rows.filter(d => !q || norm(d.name).includes(q));
-    const late = d => { const n = dayDiff(d.pay || d.inv); return n !== null && n > DEBT_LATE_DAYS; };
-    const by = { amount: (a, b) => b.debt - a.debt, name: (a, b) => a.name.localeCompare(b.name, 'ar'), pay: (a, b) => (a.pay || '0') < (b.pay || '0') ? -1 : (a.pay || '0') > (b.pay || '0') ? 1 : 0, inv: (a, b) => (b.inv || '').localeCompare(a.inv || '') }[sort];
+    const rk = d => { const r = remDays(d); return r === null ? 1e9 : r; };
+    const by = { amount: (a, b) => b.debt - a.debt, name: (a, b) => a.name.localeCompare(b.name, 'ar'), rem: (a, b) => rk(a) - rk(b), pay: (a, b) => (b.pay || '').localeCompare(a.pay || '') }[sort];
     list = list.slice().sort(by);
-    $('#debtTotal').textContent = iqd(debts.rows.reduce((a, d) => a + d.debt, 0));
+    $('#debtTotal').textContent = ownerOpen ? iqd(debts.rows.reduce((a, d) => a + d.debt, 0)) : '••••••';
+    $('#debtTotalBtn').textContent = ownerOpen ? 'إخفاء' : 'إظهار (المالك)';
     $('#debtCount').textContent = num(debts.rows.length);
     $('#debtInfo').textContent = debts.at ? `آخر تحديث: ${new Date(debts.at).toLocaleString('ar-IQ')} — ${debts.src === 'device' ? 'من ملف على جهازك' : 'من الموقع'}` : '';
     $('#debtList').innerHTML = list.length ? list.map(d => {
-      const ni = dayDiff(d.inv), np = dayDiff(d.pay);
-      return `<div class="debt${late(d) ? ' late' : ''}">
+      const r = remDays(d), late = r !== null && r < 0, np = dayDiff(d.pay);
+      const remTxt = r === null ? '—' : late ? `متأخر ${num(-r)} يوماً` : r === 0 ? 'ينتهي اليوم' : `${num(r)} يوماً`;
+      return `<div class="debt${late ? ' late' : ''}">
         <div class="d-top"><b class="d-name">${esc(d.name)}</b><span class="d-amt">${iqd(d.debt)}</span></div>
         <div class="d-grid">
-          <span>آخر قائمة</span><b>${showDate(d.inv)}${ago(ni) ? ` <small>${ago(ni)}</small>` : ''}</b>
-          <span>آخر قبض</span><b>${showDate(d.pay)}${ago(np) ? ` <small>${ago(np)}</small>` : ''}</b>
-          <span>آخر مبلغ مقبوض</span><b>${d.paid > 0 ? `<bdi dir="ltr">${iqd(d.paid)}</bdi>` : '—'}</b>
-        </div>${late(d) ? `<div class="d-late">⚠ متأخر عن القبض أكثر من ${num(DEBT_LATE_DAYS)} يوماً</div>` : ''}</div>`;
+          <span>آخر دفع</span><b>${showDate(d.pay)}${ago(np) ? ` <small>${ago(np)}</small>` : ''}</b>
+          <span>المدة الباقية للدفع</span><b class="${late ? 'd-red' : ''}">${remTxt}</b>
+          <span>العنوان</span><b>${d.addr ? esc(d.addr) : '—'}</b>
+        </div>${late ? `<div class="d-late">⚠ تجاوز مدة الدفع (${num(DEBT_LATE_DAYS)} يوماً من آخر دفع)</div>` : ''}</div>`;
     }).join('') : `<p class="hint" style="text-align:center;padding:24px 8px">${debts.rows.length ? 'لا توجد نتائج مطابقة' : 'لا توجد بيانات ديون بعد.<br>ضع الملف <b dir="ltr">data/debts.xlsx</b> على الموقع ثم اضغط «تحديث من الموقع»، أو اضغط «استيراد ملف إكسل» واختر الملف من جهازك.'}</p>`;
   }
+  $('#debtTotalBtn').onclick = async () => {
+    if (ownerOpen) { ownerOpen = false; renderDebts(); return; }
+    if (OWNER_CODE && !(await askDialog({ title: 'إجمالي الديون', text: 'أدخل رمز المالك', input: true, validate: v => v === codeNorm(OWNER_CODE) || 'الرمز غير صحيح' }))) return;
+    ownerOpen = true; renderDebts();
+  };
   async function refreshDebts(manual) {
     try {
       const rows = await fetchDebtsFile(); saveDebts(rows, 'site'); renderDebts();
@@ -1598,7 +1621,7 @@
     }
   }
   $('#btnDebts').onclick = () => {
-    $('#debtQ').value = ''; renderDebts(); openSheet('debtSheet');
+    $('#debtQ').value = ''; ownerOpen = false; renderDebts(); openSheet('debtSheet');
     if (!debts.src || debts.src === 'site') refreshDebts(false);        // الملف المستورد من الجهاز لا يُستبدل تلقائياً
   };
   $('#debtQ').addEventListener('input', renderDebts);
