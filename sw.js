@@ -3,7 +3,7 @@
    - data/products.json (الأسعار): الشبكة أولاً، وإن لم يوجد إنترنت تُعرض آخر نسخة محفوظة
    - الصور: تُحفظ عند أول عرض وتبقى (تتبقى بين التحديثات)
    غيّر VERSION عند تعديل ملفات التطبيق نفسها لإجبار التحديث. */
-const VERSION = '2026-11-16.1';
+const VERSION = '2026-11-19.1';
 const SHELL_CACHE = 'shell-' + VERSION;
 const IMG_CACHE = 'images-v1';
 const DATA_CACHE = 'data-v1';
@@ -11,7 +11,8 @@ const LIB_CACHE = 'lib-v1';
 const QR_LIB = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';   // قارئ الباركود: يُحفظ ليعمل بدون إنترنت
 const SHELL = [
   './', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
+  'splash.js', 'splash-ring.png', 'splash-b.png', 'splash-stem.png', 'splash-dot.png', 'splash-full.png'
 ];
 
 self.addEventListener('install', e => {
