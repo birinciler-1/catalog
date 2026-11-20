@@ -158,11 +158,12 @@
     catch { throw new Error('badcode'); }
   }
   /* يجرّب الرموز المحفوظة على الجهاز أولاً، وإن لم تنفع يسأل المستخدم؛ الرمز الصحيح يُحفظ فلا يُسأل ثانية.  إلغاء الإدخال = 'locked' */
-  async function unlockWith(env, { tryKeys, saveKey, title, text }) {
+  async function unlockWith(env, { tryKeys, saveKey, title, text, onAsk }) {
     for (const k of tryKeys) {
       const c = store.get(k); if (!c) continue;
       try { return await decryptEnv(env, c); } catch (e) { if (e.message !== 'badcode') throw e; }
     }
+    if (onAsk) onAsk();                                              // لا رمز صالح: تُمسح النسخة المحفوظة قبل أن يُطلب الرمز
     let msg = tryKeys.some(k => store.get(k)) ? 'الرمز المحفوظ لم يعد صالحاً (ربما تغيّر). أدخل الرمز الجديد.' : text;
     for (;;) {
       const v = await askDialog({ title, text: msg, input: true, validate: x => x.length > 0 || 'اكتب الرمز' });
@@ -170,6 +171,13 @@
       try { const out = await decryptEnv(env, v); store.set(saveKey, v); return out; }
       catch (e) { if (e.message !== 'badcode') throw e; msg = 'الرمز غير صحيح، حاول مرة أخرى'; }
     }
+  }
+  /* جهاز لم يُدخل الرمز بعد (أو نسخة قديمة غير مشفرة محفوظة عليه): نمسحها ونعرض شاشة القفل */
+  function wipeLocal() {
+    store.set('catalog-data', '');
+    state.all = []; state.items = []; state.version = null; state.updated = null;
+    apply(false);
+    showEmpty('التطبيق مقفل.\nاضغط هنا لإدخال رمز التفعيل.');
   }
   async function fetchData() {
     const ctl = new AbortController();
@@ -185,7 +193,9 @@
       if (!r.ok) throw new Error('http ' + r.status);
       env = await r.json();
     } finally { clearTimeout(t); }
-    const plain = await unlockWith(env, { tryKeys: ['appcode'], saveKey: 'appcode', title: 'تفعيل الكتالوج', text: 'أدخل رمز التفعيل الذي أعطاك إياه المسؤول' });
+    store.set('encsite', '1');                                       // الموقع مشفّر: من الآن لا تُعرض بيانات محفوظة قبل إدخال الرمز
+    const plain = await unlockWith(env, { tryKeys: ['appcode'], saveKey: 'appcode', title: 'تفعيل الكتالوج', text: 'أدخل رمز التفعيل الذي أعطاك إياه المسؤول',
+      onAsk: () => { if (!store.get('appcode') && state.all.length) wipeLocal(); } });
     return JSON.parse(new TextDecoder().decode(plain));
   }
 
@@ -235,7 +245,7 @@
     } catch (e) {
       const locked = e && e.message === 'locked';
       if (manual) toast(locked ? 'لم يُدخل الرمز — لم يتم التحديث' : 'تعذّر التحديث — تحقق من الإنترنت');
-      else if (!state.items.length) showEmpty(locked ? 'التطبيق مقفل.\nاضغط هنا لإدخال رمز التفعيل.' : 'لا توجد بيانات محفوظة بعد.\nافتح التطبيق مرة وأنت متصل بالإنترنت.');
+      else if (!state.items.length) showEmpty(locked || (store.get('encsite') === '1' && !store.get('appcode')) ? 'التطبيق مقفل.\nاضغط هنا لإدخال رمز التفعيل.' : 'لا توجد بيانات محفوظة بعد.\nافتح التطبيق مرة وأنت متصل بالإنترنت.');
     }
   }
 
@@ -1157,8 +1167,10 @@
 
   let had = false;
   const cached = store.get('catalog-data');
-  if (cached) { try { applyData(JSON.parse(cached)); had = true; } catch { /* نسخة تالفة */ } }
-  if (!had) showEmpty('جارٍ تحميل البيانات…');
+  const locked0 = store.get('encsite') === '1' && !store.get('appcode');          // موقع مشفّر ولم يُدخل الرمز على هذا الجهاز
+  if (cached && locked0) store.set('catalog-data', '');
+  if (cached && !locked0) { try { applyData(JSON.parse(cached)); had = true; } catch { /* نسخة تالفة */ } }
+  if (!had) showEmpty(locked0 ? 'التطبيق مقفل.\nاضغط هنا لإدخال رمز التفعيل.' : 'جارٍ تحميل البيانات…');
   refresh(false).then(() => { if (!state.items.length) return; $('#empty').hidden = state.list.length > 0; });
 
   /* ───────────── التقريب بإصبعين (مثل معرض الصور): تغيير عدد الأعمدة ───────────── */
@@ -1615,7 +1627,8 @@
       return parseDebts(await r.arrayBuffer());
     }
     if (!r.ok) throw new Error('http ' + r.status);
-    const buf = await unlockWith(await r.json(), { tryKeys: ['debtcode', 'appcode'], saveKey: 'debtcode', title: 'رمز الديون', text: 'أدخل رمز فتح الديون' });
+    const buf = await unlockWith(await r.json(), { tryKeys: ['debtcode', 'appcode'], saveKey: 'debtcode', title: 'رمز الديون', text: 'أدخل رمز فتح الديون',
+      onAsk: () => { debts = { rows: [], at: '', src: '' }; store.set('debts', ''); renderDebts(); } });
     return parseDebts(buf);
   }
   const dayDiff = iso => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); const t = new Date(); return Math.floor((Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) - Date.UTC(y, m - 1, d)) / 86400000); };
