@@ -2,7 +2,7 @@ name: تحديث بيانات الكتالوج
 on:
   push:
     branches: [main]
-    paths: ['excel/**','raw_images/**','tools/convert.py']
+    paths: ['excel/**','raw_images/**','tools/convert.py','tools/secure.py','private/**']
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,7 +15,19 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r tools/requirements.txt
+      - run: pip install msoffcrypto-tool cryptography
+      # 1) فك قفل إكسل على جهاز GitHub المؤقت (الأسرار لا تُطبع في السجل)
+      - run: python tools/secure.py unlock-excel
+        env:
+          EXCEL_PASSWORD: ${{ secrets.EXCEL_PASSWORD }}
+      # 2) التحويل كما كان تماماً
       - run: python tools/convert.py --prune
+      # 3) تشفير النتيجة وحذف النسخة المقروءة قبل الحفظ
+      - run: python tools/secure.py seal
+        env:
+          APP_CODE: ${{ secrets.APP_CODE }}
+          DEBTS_CODE: ${{ secrets.DEBTS_CODE }}
+          EXCEL_PASSWORD: ${{ secrets.EXCEL_PASSWORD }}
       - run: |
           git config user.name "catalog-bot"
           git config user.email "catalog-bot@users.noreply.github.com"
