@@ -149,14 +149,44 @@
   }
 
   /* ───────────── تحميل البيانات ───────────── */
+  /* ───────────── فك التشفير: الملفات المنشورة products.enc / debts.enc مشفّرة (AES-256-GCM) ولا تُفتح إلا برمز التفعيل ───────────── */
+  const b64u = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function decryptEnv(env, code) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64u(env.salt), iterations: env.iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    try { return await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(env.iv) }, key, b64u(env.ct)); }
+    catch { throw new Error('badcode'); }
+  }
+  /* يجرّب الرموز المحفوظة على الجهاز أولاً، وإن لم تنفع يسأل المستخدم؛ الرمز الصحيح يُحفظ فلا يُسأل ثانية.  إلغاء الإدخال = 'locked' */
+  async function unlockWith(env, { tryKeys, saveKey, title, text }) {
+    for (const k of tryKeys) {
+      const c = store.get(k); if (!c) continue;
+      try { return await decryptEnv(env, c); } catch (e) { if (e.message !== 'badcode') throw e; }
+    }
+    let msg = tryKeys.some(k => store.get(k)) ? 'الرمز المحفوظ لم يعد صالحاً (ربما تغيّر). أدخل الرمز الجديد.' : text;
+    for (;;) {
+      const v = await askDialog({ title, text: msg, input: true, validate: x => x.length > 0 || 'اكتب الرمز' });
+      if (!v) throw new Error('locked');
+      try { const out = await decryptEnv(env, v); store.set(saveKey, v); return out; }
+      catch (e) { if (e.message !== 'badcode') throw e; msg = 'الرمز غير صحيح، حاول مرة أخرى'; }
+    }
+  }
   async function fetchData() {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 25000);
+    let r, env;
     try {
-      const r = await fetch('data/products.json', { cache: 'no-store', signal: ctl.signal });
+      r = await fetch('data/products.enc', { cache: 'no-store', signal: ctl.signal });
+      if (r.status === 404) {                                        // موقع قديم غير مشفّر: نقرأ products.json كما كان
+        r = await fetch('data/products.json', { cache: 'no-store', signal: ctl.signal });
+        if (!r.ok) throw new Error('http ' + r.status);
+        return await r.json();
+      }
       if (!r.ok) throw new Error('http ' + r.status);
-      return await r.json();
+      env = await r.json();
     } finally { clearTimeout(t); }
+    const plain = await unlockWith(env, { tryKeys: ['appcode'], saveKey: 'appcode', title: 'تفعيل الكتالوج', text: 'أدخل رمز التفعيل الذي أعطاك إياه المسؤول' });
+    return JSON.parse(new TextDecoder().decode(plain));
   }
 
   /* ───────────── المواد المزالة (على هذا الجهاز فقط) ─────────────
@@ -202,9 +232,10 @@
         applyData(d);
         if (hadData) toast('تم تحديث الأسعار والمواد ✓');
       } else if (manual) toast('الأسعار محدّثة ✓');
-    } catch {
-      if (manual) toast('تعذّر التحديث — تحقق من الإنترنت');
-      else if (!state.items.length) showEmpty('لا توجد بيانات محفوظة بعد.\nافتح التطبيق مرة وأنت متصل بالإنترنت.');
+    } catch (e) {
+      const locked = e && e.message === 'locked';
+      if (manual) toast(locked ? 'لم يُدخل الرمز — لم يتم التحديث' : 'تعذّر التحديث — تحقق من الإنترنت');
+      else if (!state.items.length) showEmpty(locked ? 'التطبيق مقفل.\nاضغط هنا لإدخال رمز التفعيل.' : 'لا توجد بيانات محفوظة بعد.\nافتح التطبيق مرة وأنت متصل بالإنترنت.');
     }
   }
 
@@ -1074,7 +1105,7 @@
       const ok = () => {
         if (!input) return done(true);
         const m = validate ? validate(codeNorm(inp.value)) : true;
-        if (m === true) done(true); else { err.textContent = m; err.hidden = false; inp.select(); }
+        if (m === true) done(codeNorm(inp.value) || true); else { err.textContent = m; err.hidden = false; inp.select(); }
       };
       $('#cfYes').onclick = ok; $('#cfNo').onclick = () => done(false);
       sh.onclick = e => { if (e.target === sh) { e.stopPropagation(); done(false); } };
@@ -1102,6 +1133,8 @@
   $('#optCustomer').addEventListener('change', e => { state.customer = e.target.checked; store.set('customer', state.customer ? '1' : '0'); applyScanBtn(); toast(state.customer ? 'وضع الزبون مفعّل' : 'وضع الزبون متوقف'); });
   $('#optSmart').addEventListener('change', e => { state.smart = e.target.checked; store.set('smart', state.smart ? '1' : '0'); if (state.view === 'all') apply(false); toast(state.smart ? 'البحث الذكي مفعّل' : 'البحث الذكي متوقف'); });
   $('#btnRefresh').onclick = () => refresh(true);
+  $('#empty').addEventListener('click', () => { if (!state.items.length) refresh(true); });
+  $('#btnForgetCode').onclick = async () => { if (await askConfirm('مسح رمز التفعيل', 'سيُطلب الرمز من جديد في التحديث القادم. هل تريد المتابعة؟')) { store.set('appcode', ''); store.set('debtcode', ''); toast('تم مسح الرمز من هذا الجهاز'); } };
   $('#btnDlThumbs').onclick = () => downloadImages('thumbs');
   $('#btnDlFull').onclick = () => downloadImages('full');
   document.addEventListener('click', e => {
@@ -1575,9 +1608,15 @@
   try { const d = JSON.parse(store.get('debts') || 'null'); if (d && Array.isArray(d.rows)) debts = d; } catch { /* تجاهل */ }
   const saveDebts = (rows, src) => { debts = { rows, at: new Date().toISOString(), src }; store.set('debts', JSON.stringify(debts)); };
   async function fetchDebtsFile() {
-    const r = await fetch('data/debts.xlsx', { cache: 'no-store' });
+    let r = await fetch('data/debts.enc', { cache: 'no-store' });
+    if (r.status === 404) {                                          // قديم غير مشفّر
+      r = await fetch('data/debts.xlsx', { cache: 'no-store' });
+      if (!r.ok) throw new Error('http ' + r.status);
+      return parseDebts(await r.arrayBuffer());
+    }
     if (!r.ok) throw new Error('http ' + r.status);
-    return parseDebts(await r.arrayBuffer());
+    const buf = await unlockWith(await r.json(), { tryKeys: ['debtcode', 'appcode'], saveKey: 'debtcode', title: 'رمز الديون', text: 'أدخل رمز فتح الديون' });
+    return parseDebts(buf);
   }
   const dayDiff = iso => { if (!iso) return null; const [y, m, d] = iso.split('-').map(Number); const t = new Date(); return Math.floor((Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()) - Date.UTC(y, m - 1, d)) / 86400000); };
   const ago = n => n === null ? '' : n < 0 ? '' : n === 0 ? 'اليوم' : n === 1 ? 'أمس' : n === 2 ? 'قبل يومين' : n <= 10 ? `قبل ${n} أيام` : `قبل ${n} يوماً`;
@@ -1617,7 +1656,7 @@
       const rows = await fetchDebtsFile(); saveDebts(rows, 'site'); renderDebts();
       if (manual) toast(`تم التحديث: ${num(rows.length)} زبون`);
     } catch (e) {
-      if (manual) toast(String(e.message).startsWith('http') ? 'لم أجد الملف data/debts.xlsx على الموقع' : 'تعذّر قراءة الملف أو لا يوجد اتصال', 3500);
+      if (manual) toast(e.message === 'locked' ? 'لم يُدخل الرمز' : String(e.message).startsWith('http') ? 'لم أجد الملف data/debts.xlsx على الموقع' : 'تعذّر قراءة الملف أو لا يوجد اتصال', 3500);
     }
   }
   $('#btnDebts').onclick = () => {
